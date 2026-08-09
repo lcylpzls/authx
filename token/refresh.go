@@ -52,6 +52,25 @@ func ConsumeRefreshToken(ctx context.Context, store RefreshStore, raw string) er
 	return nil
 }
 
+// RotateRefreshToken 轮换刷新令牌：校验旧令牌有效后删除旧哈希并签发新令牌。
+// 用于刷新流程，保证单次使用（旧令牌立即失效）。
+func RotateRefreshToken(ctx context.Context, store RefreshStore, oldRaw string, ttl time.Duration) (string, error) {
+	if store == nil || oldRaw == "" {
+		return "", errx.New(errx.KindInvalid, authx.CodeRefreshTokenInvalid, "刷新令牌或存储不能为空")
+	}
+	ok, err := store.Validate(ctx, HashRefreshToken(oldRaw))
+	if err != nil {
+		return "", errx.Wrap(err, errx.KindUnavailable, authx.CodeRefreshTokenInvalid, "刷新令牌查询失败")
+	}
+	if !ok {
+		return "", authx.ErrRefreshTokenInvalid
+	}
+	if err := store.Delete(ctx, HashRefreshToken(oldRaw)); err != nil {
+		return "", errx.Wrap(err, errx.KindUnavailable, authx.CodeRefreshTokenInvalid, "刷新令牌删除失败")
+	}
+	return IssueRefreshToken(ctx, store, ttl)
+}
+
 // HashRefreshToken 计算刷新令牌哈希（存储与查询使用，明文不落库）。
 func HashRefreshToken(raw string) string {
 	sum := sha256.Sum256([]byte(raw))

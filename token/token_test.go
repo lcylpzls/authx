@@ -315,6 +315,71 @@ func TestWithLeeway(t *testing.T) {
 	}
 }
 
+// TestKIDOptions 覆盖 kid 配置校验。
+func TestKIDOptions(t *testing.T) {
+	secret, _, _, _ := testKey(t)
+	if _, err := NewHS256(secret, WithKID("")); err == nil || !errx.Is(err, authx.CodeTokenConfigInvalid) {
+		t.Fatalf("空 kid 应报错，实际：%v", err)
+	}
+	if _, err := NewHS256(secret, WithVerificationKeys(map[string]any{})); err == nil ||
+		!errx.Is(err, authx.CodeTokenConfigInvalid) {
+		t.Fatalf("空验证表应报错，实际：%v", err)
+	}
+}
+
+// TestKIDRotation 覆盖多密钥轮换验证。
+func TestKIDRotation(t *testing.T) {
+	oldSecret := []byte("0123456789abcdef0123456789abcdef")
+	newSecret := []byte("fedcba9876543210fedcba9876543210")
+	oldSigner, err := NewHS256(oldSecret, WithKID("key-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newSigner, err := NewHS256(newSecret, WithKID("key-2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := NewHS256(oldSecret, WithKID("key-1"),
+		WithVerificationKeys(map[string]any{"key-1": oldSecret, "key-2": newSecret}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldToken, err := oldSigner.Sign("u-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newToken, err := newSigner.Sign("u-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifier.Parse(oldToken); err != nil {
+		t.Fatalf("旧密钥令牌应可验证：%v", err)
+	}
+	if _, err := verifier.Parse(newToken); err != nil {
+		t.Fatalf("新密钥令牌应可验证：%v", err)
+	}
+	// 未登记 kid 的令牌应拒绝。
+	plainSigner, err := NewHS256([]byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown, err := plainSigner.Sign("u-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifier.Parse(unknown); !errx.Is(err, authx.CodeTokenSignature) {
+		t.Fatalf("未登记密钥应报签名错误，实际：%v", err)
+	}
+	// 未启用验证表时 kid 不匹配应拒绝。
+	strictVerifier, err := NewHS256(oldSecret, WithKID("key-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := strictVerifier.Parse(newToken); !errx.Is(err, authx.CodeTokenSignature) {
+		t.Fatalf("kid 不匹配应报签名错误，实际：%v", err)
+	}
+}
+
 // failingRevocationStore 返回固定错误的撤销存储。
 type failingRevocationStore struct {
 	err error

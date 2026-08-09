@@ -28,15 +28,17 @@ var randRead = rand.Read
 
 // Signer JWT 签发与校验器。
 type Signer struct {
-	method    jwt.SigningMethod
-	signKey   any
-	verifyKey any
-	issuer    string
-	audience  []string
-	ttl       time.Duration
-	leeway    time.Duration
-	revoke    RevocationStore
-	now       func() time.Time
+	method     jwt.SigningMethod
+	signKey    any
+	verifyKey  any
+	issuer     string
+	audience   []string
+	ttl        time.Duration
+	leeway     time.Duration
+	kid        string
+	verifyKeys map[string]any
+	revoke     RevocationStore
+	now        func() time.Time
 }
 
 // Option 配置 Signer 的可选参数。
@@ -104,6 +106,32 @@ func WithLeeway(d time.Duration) Option {
 			return errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "时间容差不能为负")
 		}
 		s.leeway = d
+		return nil
+	}
+}
+
+// WithKID 设置签发密钥标识（写入 JWT 头 kid），配合多密钥轮换使用。
+func WithKID(kid string) Option {
+	return func(s *Signer) error {
+		if kid == "" {
+			return errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "密钥标识不能为空")
+		}
+		s.kid = kid
+		return nil
+	}
+}
+
+// WithVerificationKeys 设置多密钥验证表（kid → 验证密钥）。
+// 启用后 Parse 按令牌头 kid 选择密钥，用于密钥轮换期间同时验证新旧密钥。
+func WithVerificationKeys(keys map[string]any) Option {
+	return func(s *Signer) error {
+		if len(keys) == 0 {
+			return errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "验证密钥表不能为空")
+		}
+		s.verifyKeys = make(map[string]any, len(keys))
+		for k, v := range keys {
+			s.verifyKeys[k] = v
+		}
 		return nil
 	}
 }
@@ -219,7 +247,11 @@ func (s *Signer) Sign(subject string, opts ...ClaimOption) (string, error) {
 	for _, opt := range opts {
 		opt(&claims)
 	}
-	raw, err := jwt.NewWithClaims(s.method, claims).SignedString(s.signKey)
+	tk := jwt.NewWithClaims(s.method, claims)
+	if s.kid != "" {
+		tk.Header["kid"] = s.kid
+	}
+	raw, err := tk.SignedString(s.signKey)
 	if err != nil {
 		return "", errx.Wrap(err, errx.KindUnavailable, authx.CodeTokenInvalid, "令牌签发失败")
 	}
@@ -245,6 +277,17 @@ func (s *Signer) Parse(raw string) (Claims, error) {
 		if t.Method.Alg() != s.method.Alg() {
 			return nil, errx.New(errx.KindUnauthorized, authx.CodeTokenSignature, "签名算法不匹配")
 		}
+		if s.verifyKeys != nil {
+			kid, _ := t.Header["kid"].(string)
+			key, ok := s.verifyKeys[kid]
+			if !ok {
+				return nil, errx.New(errx.KindUnauthorized, authx.CodeTokenSignature, "密钥标识不存在")
+			}
+			return key, nil
+		}
+		if kid, _ := t.Header["kid"].(string); kid != "" && s.kid != "" && kid != s.kid {
+			return nil, errx.New(errx.KindUnauthorized, authx.CodeTokenSignature, "密钥标识不匹配")
+		}
 		return s.verifyKey, nil
 	}, opts...); err != nil {
 		return Claims{}, classifyParseError(err)
@@ -263,6 +306,9 @@ func (s *Signer) Parse(raw string) (Claims, error) {
 
 // classifyParseError 将 golang-jwt 错误映射为统一语义。
 func classifyParseError(err error) error {
+	if errx.Is(err, authx.CodeTokenSignature) {
+		return authx.ErrTokenSignature
+	}
 	switch {
 	case errors.Is(err, jwt.ErrTokenExpired):
 		return authx.ErrTokenExpired

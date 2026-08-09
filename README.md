@@ -53,6 +53,26 @@ ok, err := password.Verify(hash, "password123")
 need, err := password.NeedsRehash(hash, authx.DefaultPasswordConfig())
 ```
 
+## 内存存储周期清理
+
+所有内存存储（会话、刷新令牌、撤销列表、恢复码、登录守卫）均提供
+`StartCleanup`，可自动回收过期条目：
+
+```go
+// 刷新令牌存储每 10 分钟清理一次过期哈希。
+refreshStore := token.NewMemoryRefreshStore(nil)
+cleanup := refreshStore.StartCleanup(10 * time.Minute)
+defer cleanup.Stop()
+
+// 会话存储同理。
+sessStore := session.NewMemoryStore(nil)
+sessCleanup := sessStore.StartCleanup(10 * time.Minute)
+defer sessCleanup.Stop()
+```
+
+存储默认容量上限 10 万条，满时新增条目返回 `ErrStoreFull`；
+可通过 `NewXxxWithLimit` 或 `WithMaxEntries` 调整。
+
 ## 版本路线
 
 | 版本 | 内容 |
@@ -66,6 +86,7 @@ need, err := password.NeedsRehash(hash, authx.DefaultPasswordConfig())
 | v0.7.0 | 防 DoS 与资源上限：容量上限、周期清理、输入上限、随机源失败报错（已发布） |
 | v0.8.0 | 会话与 CSRF 加固：会话轮换、保存失败日志、CSRF 令牌、Auth 上限与转义（已发布） |
 | v0.9.0 | 密码学完整化：TOTP 算法/位数/周期、恢复码存储、密码强度、JWT leeway（已发布） |
+| v0.10.0 | 令牌生命周期：kid 多密钥轮换、刷新令牌轮换助手、存储文档与清理示例（已发布） |
 
 ## 规范
 

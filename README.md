@@ -29,8 +29,11 @@ authx/
 ├── oauth2/                   # OAuth2 客户端与授权服务端
 ├── audit/                    # 结构化审计日志
 ├── security/                 # 登录防爆破守卫
-└── examples/full/            # 全套组合示例
+├── examples/full/            # 全套组合示例
+└── examples/login-demo/      # 登录全链路演示（注册/会话/CSRF/RBAC/JWT/MFA/OAuth2）
 ```
+
+完整错误码清单见 [ERRORS.md](ERRORS.md)。
 
 ## 安装
 
@@ -96,6 +99,7 @@ defer sessCleanup.Stop()
 | v0.14.0 | 审计异步化：AsyncAuditor 批量落库、丢弃/阻塞策略、优雅关闭（已发布） |
 | v0.15.0 | OAuth2 服务端可插拔存储：WithClientStore/WithTokenStore 多实例就绪（已发布） |
 | v0.16.0 | 会话与 CSRF 纵深防御：Cookie HMAC 签名、Origin/Referer 校验（已发布） |
+| v0.17.0 | 全链路示例与文档定稿：login-demo、ERRORS.md、README 核对（已发布） |
 
 ## 规范
 

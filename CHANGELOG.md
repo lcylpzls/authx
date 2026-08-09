@@ -2,6 +2,17 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+## [v0.17.0] - 2026-08-09
+
+### 新增
+
+- examples/login-demo 全链路演示：
+  - 注册（密码强度 + Argon2id）→ 登录（防爆破 + 会话轮换 + JWT）→
+    会话（HMAC 签名 Cookie）→ CSRF（双提交 + Origin 校验）→
+    RBAC 权限 → 审计（异步）→ MFA（TOTP）→ OAuth2 端点；
+  - `TestAppFlow` 覆盖注册/重复注册/弱密码/登录/鉴权/管理员/MFA 全流程；
+- ERRORS.md：全部错误码、Kind、建议 HTTP 状态与判断方式清单。
+
 ## [v0.16.0] - 2026-08-09
 
 ### 新增

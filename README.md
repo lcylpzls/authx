@@ -12,6 +12,9 @@
 - 审计：结构化审计日志（logx 集成）+ 持久化钩子；
 - 安全：登录失败计数、账号锁定、滑动窗口清理。
 
+质量基线：核心包 100% 语句覆盖、六目标 fuzz（password/token/rbac/mfa/session/security）、
+race 检测、三平台 CI + govulncheck 依赖漏洞扫描、全套基准测试。
+
 ## 目录
 
 ```
@@ -88,6 +91,7 @@ defer sessCleanup.Stop()
 | v0.9.0 | 密码学完整化：TOTP 算法/位数/周期、恢复码存储、密码强度、JWT leeway（已发布） |
 | v0.10.0 | 令牌生命周期：kid 多密钥轮换、刷新令牌轮换助手、存储文档与清理示例（已发布） |
 | v0.11.0 | OAuth2 与审计加固：客户端刷新助手、响应上限、Basic Auth、审计限长与钩子隔离（已发布） |
+| v0.12.0 | 质量收口：六目标 fuzz、govulncheck、基准测试、SECURITY、终审加固（已发布，版本线完成） |
 
 ## 规范
 

@@ -184,6 +184,13 @@ func parseHash(hash string) (params, []byte, []byte, error) {
 	if err != nil {
 		return zero, nil, nil, err
 	}
+	// 解码前先按编码长度预检，避免超长输入触发大内存分配。
+	if len(parts[4]) > base64.RawStdEncoding.EncodedLen(maxSaltLength) {
+		return zero, nil, nil, wrapHashInvalid("盐段编码长度超出上限")
+	}
+	if len(parts[5]) > base64.RawStdEncoding.EncodedLen(maxDerivedKeyLen) {
+		return zero, nil, nil, wrapHashInvalid("密钥段编码长度超出上限")
+	}
 	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
 	if err != nil {
 		return zero, nil, nil, wrapHashInvalid("盐段不是合法的 base64")
@@ -195,14 +202,8 @@ func parseHash(hash string) (params, []byte, []byte, error) {
 	if len(salt) < 8 {
 		return zero, nil, nil, wrapHashInvalid("盐长度至少 8 字节")
 	}
-	if len(salt) > maxSaltLength {
-		return zero, nil, nil, wrapHashInvalid("盐长度超出上限")
-	}
 	if len(key) < 16 {
 		return zero, nil, nil, wrapHashInvalid("密钥长度至少 16 字节")
-	}
-	if len(key) > maxDerivedKeyLen {
-		return zero, nil, nil, wrapHashInvalid("密钥长度超出上限")
 	}
 	return par, salt, key, nil
 }

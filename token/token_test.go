@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -180,6 +181,10 @@ func TestParseErrors(t *testing.T) {
 	// 空主体。
 	if _, err := s.Sign(""); !errx.Is(err, authx.CodeTokenInvalid) {
 		t.Fatalf("空主体应报错，实际：%v", err)
+	}
+	// 超长原始令牌。
+	if _, err := s.Parse(strings.Repeat("a", maxTokenRawLength+1)); !errx.Is(err, authx.CodeTokenInvalid) {
+		t.Fatalf("超长令牌应报错，实际：%v", err)
 	}
 }
 

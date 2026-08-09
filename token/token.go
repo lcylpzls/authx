@@ -16,6 +16,9 @@ import (
 	"github.com/lcylpzls/errx"
 )
 
+// maxTokenRawLength 原始令牌长度上限（64 KiB，防超长输入 DoS）。
+const maxTokenRawLength = 64 << 10
+
 // Claims 标准载荷 + 业务角色/权限。
 type Claims struct {
 	jwt.RegisteredClaims
@@ -260,6 +263,9 @@ func (s *Signer) Sign(subject string, opts ...ClaimOption) (string, error) {
 
 // Parse 校验签名、有效期、签发方、受众与撤销状态，返回载荷。
 func (s *Signer) Parse(raw string) (Claims, error) {
+	if len(raw) > maxTokenRawLength {
+		return Claims{}, authx.ErrTokenInvalid
+	}
 	var claims Claims
 	opts := []jwt.ParserOption{jwt.WithTimeFunc(s.now)}
 	if s.leeway > 0 {

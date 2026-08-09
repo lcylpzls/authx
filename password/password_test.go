@@ -132,6 +132,8 @@ func TestVerifyHashFormatErrors(t *testing.T) {
 		"$argon2id$v=19$m=32,t=3,p=4$" + salt + "$" + enc.EncodeToString([]byte{0x11}),
 		"$argon2id$v=19$m=32,t=3,p=4$" + enc.EncodeToString(make([]byte, 1025)) + "$" + key,
 		"$argon2id$v=19$m=32,t=3,p=4$" + salt + "$" + enc.EncodeToString(make([]byte, 4097)),
+		"$argon2id$v=19$m=32,t=3,p=4$" + enc.EncodeToString(make([]byte, 2000)) + "$" + key,
+		"$argon2id$v=19$m=32,t=3,p=4$" + salt + "$" + enc.EncodeToString(make([]byte, 5000)),
 	}
 	for i, h := range bad {
 		if _, err := Verify(h, "password123"); err == nil || !errx.Is(err, authx.CodePasswordHashInvalid) {

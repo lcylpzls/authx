@@ -2,6 +2,32 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+## [v0.12.0] - 2026-08-09
+
+### 新增
+
+- fuzz 扩展到 6 个目标：password、token、rbac、mfa、session、security，
+  CI 每目标 10 秒短程（FuzzRBAC/FuzzTOTP/FuzzSessionStore/FuzzLoginGuard）；
+- CI 新增 govulncheck 依赖漏洞扫描 job；
+- 基准测试：password（哈希/校验）、token（签发/校验）、TOTP（生成/校验）、
+  RBAC（权限判断）、会话（保存/读取）、登录守卫（失败记录）、CSRF（令牌比较）；
+- SECURITY.md：漏洞报告流程、支持范围、安全基线与实践建议；
+- godoc 示例：password/token/mfa/session 各包 Example 演示。
+
+### 安全修复（终审）
+
+- TOTP `Period` 下限调整为 1 秒：fuzz 发现亚秒周期会导致
+  `Seconds()` 为 0 触发除零 panic（恶意配置可拒绝服务）；
+- 密码哈希解析：base64 解码前按编码长度预检，避免超长输入
+  触发大内存分配；
+- JWT 校验：原始令牌长度上限 64 KiB，拒绝超长输入。
+
+### 版本线
+
+- v0.1.0 - v0.12.0 全部完成并发布，按计划**停止于 v0.12.0**，不发布 v1.0.0；
+- 核心包语句覆盖率 100%，六目标 fuzz、race、三平台 CI、
+  govulncheck 全绿。
+
 ## [v0.11.0] - 2026-08-09
 
 ### 新增

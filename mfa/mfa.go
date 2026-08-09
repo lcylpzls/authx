@@ -69,7 +69,7 @@ func (c TOTPConfig) Validate() error {
 	if c.Digits != 6 && c.Digits != 8 {
 		return authx.ErrMFAConfigInvalid
 	}
-	if c.Period <= 0 {
+	if c.Period < time.Second {
 		return authx.ErrMFAConfigInvalid
 	}
 	return nil

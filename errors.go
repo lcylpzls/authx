@@ -63,6 +63,8 @@ const (
 	CodeStoreFull errx.Code = "authx_store_full"
 	// CodeRBACLimit RBAC 规模超出上限（角色数量或继承深度）。
 	CodeRBACLimit errx.Code = "authx_rbac_limit"
+	// CodeCSRFGenerationFailed CSRF 令牌生成失败。
+	CodeCSRFGenerationFailed errx.Code = "authx_csrf_generation_failed"
 )
 
 // 预定义错误值，可用 errx.Is 判断。
@@ -117,4 +119,6 @@ var (
 	ErrStoreFull = errx.New(errx.KindUnavailable, CodeStoreFull, "存储容量已满")
 	// ErrRBACLimit RBAC 规模超出上限。
 	ErrRBACLimit = errx.New(errx.KindInvalid, CodeRBACLimit, "RBAC 规模超出上限")
+	// ErrCSRFGenerationFailed CSRF 令牌生成失败。
+	ErrCSRFGenerationFailed = errx.New(errx.KindUnavailable, CodeCSRFGenerationFailed, "CSRF 令牌生成失败")
 )

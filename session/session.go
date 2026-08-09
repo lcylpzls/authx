@@ -37,6 +37,9 @@ type Store interface {
 	Save(ctx context.Context, s Session, ttl time.Duration) error
 	// Delete 删除会话（登出时调用）。
 	Delete(ctx context.Context, id string) error
+	// Rotate 将指定会话轮换为新随机 ID 并保留全部值，删除旧条目
+	// （防会话固定攻击；不存在或已过期返回 ErrSessionNotFound）。
+	Rotate(ctx context.Context, id string, ttl time.Duration) (Session, error)
 }
 
 // sessionItem 内存条目。
@@ -145,6 +148,41 @@ func (s *MemoryStore) Delete(_ context.Context, id string) error {
 	defer s.mu.Unlock()
 	delete(s.items, id)
 	return nil
+}
+
+// Rotate 轮换会话 ID：读取旧会话、生成新 ID、复制全部值并删除旧条目。
+func (s *MemoryStore) Rotate(ctx context.Context, id string, ttl time.Duration) (Session, error) {
+	if id == "" || ttl <= 0 {
+		return Session{}, authx.ErrSessionInvalid
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.items[id]
+	if !ok {
+		return Session{}, authx.ErrSessionNotFound
+	}
+	if !s.now().Before(item.expires) {
+		delete(s.items, id)
+		return Session{}, authx.ErrSessionNotFound
+	}
+	for attempt := 0; attempt < createRetry; attempt++ {
+		nid, err := newSessionID()
+		if err != nil {
+			return Session{}, errx.Wrap(err, errx.KindUnavailable, authx.CodeSessionStoreInvalid, "会话 ID 生成失败")
+		}
+		if _, exists := s.items[nid]; exists {
+			continue // ID 冲突，重试。
+		}
+		rotated := Session{ID: nid, Values: make(map[string]string, len(item.session.Values))}
+		for k, v := range item.session.Values {
+			rotated.Values[k] = v
+		}
+		s.items[nid] = sessionItem{session: rotated, expires: s.now().Add(ttl)}
+		delete(s.items, id)
+		return rotated, nil
+	}
+	return Session{}, errx.Wrap(authx.ErrSessionStoreInvalid, errx.KindUnavailable,
+		authx.CodeSessionStoreInvalid, "会话 ID 冲突且重试耗尽")
 }
 
 // Cleanup 清理过期会话，返回清理数量。

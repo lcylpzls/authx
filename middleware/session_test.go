@@ -5,10 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/authx/session"
+	"github.com/lcylpzls/logx"
 	"github.com/lcylpzls/webx"
 )
 
@@ -155,6 +158,7 @@ func TestSessionLoadErrors(t *testing.T) {
 type failingSessionStore struct {
 	err       error
 	createErr error
+	saveErr   error
 }
 
 func (f failingSessionStore) Create(context.Context, time.Duration) (session.Session, error) {
@@ -165,7 +169,142 @@ func (f failingSessionStore) Get(context.Context, string) (session.Session, erro
 	return session.Session{}, f.err
 }
 
-func (f failingSessionStore) Save(context.Context, session.Session, time.Duration) error { return nil }
-func (f failingSessionStore) Delete(context.Context, string) error                       { return nil }
+func (f failingSessionStore) Save(context.Context, session.Session, time.Duration) error {
+	return f.saveErr
+}
+func (f failingSessionStore) Delete(context.Context, string) error { return nil }
+func (f failingSessionStore) Rotate(context.Context, string, time.Duration) (session.Session, error) {
+	return session.Session{}, f.err
+}
 
 var _ session.Store = failingSessionStore{}
+
+// TestRotateSessionFlow 覆盖登录后会话轮换（防会话固定）。
+func TestRotateSessionFlow(t *testing.T) {
+	store := session.NewMemoryStore(nil)
+	mw := Session(store, "sid", WithSessionSecure(false))
+	var sid string
+	_, c := runChain(t, http.MethodGet, mw, func(c *webx.Context) {
+		s, _ := SessionFrom(c)
+		sid = s.ID
+		s.Values["k"] = "v"
+		if err := RotateSession(c); err != nil {
+			t.Fatalf("轮换失败：%v", err)
+		}
+	})
+	_ = c
+	// 旧会话已被轮换删除，新会话保留值。
+	if _, err := store.Get(context.Background(), sid); err == nil {
+		t.Fatal("旧会话应已删除")
+	}
+	if store.Cleanup() != 0 {
+		t.Fatal("轮换后不应残留旧条目")
+	}
+}
+
+// TestRotateSessionCookie 覆盖轮换后 Cookie 与上下文更新。
+func TestRotateSessionCookie(t *testing.T) {
+	store := session.NewMemoryStore(nil)
+	mw := Session(store, "sid", WithSessionSecure(false))
+	var newID string
+	var rotated *http.Cookie
+	w, _ := runChain(t, http.MethodGet, mw, func(c *webx.Context) {
+		s, _ := SessionFrom(c)
+		s.Values["k"] = "v"
+		if err := RotateSession(c); err != nil {
+			t.Fatal(err)
+		}
+		s2, _ := SessionFrom(c)
+		newID = s2.ID
+	})
+	for _, ck := range w.Result().Cookies() {
+		if ck.Name == "sid" {
+			rotated = ck
+		}
+	}
+	if rotated == nil || rotated.Value != newID {
+		t.Fatalf("Cookie 应更新为新会话 ID：%v new=%q", rotated, newID)
+	}
+}
+
+// TestRotateSessionErrors 覆盖轮换错误分支。
+func TestRotateSessionErrors(t *testing.T) {
+	// 未装配会话中间件。
+	_, c := runChain(t, http.MethodGet)
+	if err := RotateSession(c); !errors.Is(err, authx.ErrSessionInvalid) {
+		t.Fatalf("未装配应报会话参数错误，实际：%v", err)
+	}
+	// 配置类型不符。
+	_, c2 := runChain(t, http.MethodGet)
+	c2.Set("authx_session_config", "not-config")
+	if err := RotateSession(c2); !errors.Is(err, authx.ErrSessionInvalid) {
+		t.Fatalf("配置类型不符应报错，实际：%v", err)
+	}
+	// 无会话。
+	_, c3 := runChain(t, http.MethodGet)
+	c3.Set("authx_session_config", &sessionConfig{store: session.NewMemoryStore(nil), cookieName: "sid",
+		ttl: time.Hour, now: time.Now})
+	if err := RotateSession(c3); !errors.Is(err, authx.ErrSessionNotFound) {
+		t.Fatalf("无会话应报不存在，实际：%v", err)
+	}
+	// 存储轮换失败。
+	fail := failingSessionStore{err: errors.New("存储故障")}
+	_, c4 := runChain(t, http.MethodGet, Session(fail, "sid"))
+	c4.Set("authx_session", session.Session{ID: "x"})
+	if err := RotateSession(c4); err == nil || !strings.Contains(err.Error(), "存储故障") {
+		t.Fatalf("存储失败应透传，实际：%v", err)
+	}
+}
+
+// recordingLogger 记录 Warn 调用以便断言会话保存失败日志。
+type recordingLogger struct {
+	warned []string
+}
+
+func (r *recordingLogger) IsDebugEnabled() bool                    { return false }
+func (r *recordingLogger) Debug(string, logx.FieldGroup)           {}
+func (r *recordingLogger) Info(string, logx.FieldGroup)            {}
+func (r *recordingLogger) Warn(msg string, _ logx.FieldGroup)      { r.warned = append(r.warned, msg) }
+func (r *recordingLogger) Error(string, logx.FieldGroup)           {}
+func (r *recordingLogger) Panic(string, logx.FieldGroup)           {}
+func (r *recordingLogger) Fatal(string, logx.FieldGroup)           {}
+func (r *recordingLogger) Debugf(string, ...any)                   {}
+func (r *recordingLogger) Infof(string, ...any)                    {}
+func (r *recordingLogger) Warnf(string, ...any)                    {}
+func (r *recordingLogger) Errorf(string, ...any)                   {}
+func (r *recordingLogger) Panicf(string, ...any)                   {}
+func (r *recordingLogger) Fatalf(string, ...any)                   {}
+func (r *recordingLogger) WithContext(context.Context) logx.Logger { return r }
+func (r *recordingLogger) WithField(string, any) logx.Logger       { return r }
+func (r *recordingLogger) Sync() error                             { return nil }
+func (r *recordingLogger) Close() error                            { return nil }
+func (r *recordingLogger) SafeExit(func())                         {}
+
+// TestSessionSaveErrorLogged 覆盖保存失败时注入日志器记录告警。
+func TestSessionSaveErrorLogged(t *testing.T) {
+	logger := &recordingLogger{}
+	fail := failingSessionStore{createErr: nil, saveErr: errors.New("保存失败")}
+	_, _ = runChain(t, http.MethodGet, Session(fail, "sid", WithSessionLogger(logger)))
+	if len(logger.warned) != 1 || logger.warned[0] != "会话保存失败" {
+		t.Fatalf("应记录一次保存失败告警：%v", logger.warned)
+	}
+}
+
+// TestSessionClock 覆盖 Cookie 过期时间使用注入时钟。
+func TestSessionClock(t *testing.T) {
+	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
+	store := session.NewMemoryStore(func() time.Time { return now })
+	mw := Session(store, "sid", WithSessionClock(func() time.Time { return now }),
+		WithSessionTTL(time.Hour), WithSessionSecure(false))
+	w, _ := runChain(t, http.MethodGet, mw)
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || !cookies[0].Expires.Equal(now.Add(time.Hour)) {
+		t.Fatalf("Cookie 过期时间应使用注入时钟：%+v", cookies)
+	}
+	// nil 时钟回退到 time.Now，不应 panic。
+	mwNil := Session(store, "sid", WithSessionClock(nil), WithSessionSecure(false))
+	w2, _ := runChain(t, http.MethodGet, mwNil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("nil 时钟回退应正常放行：%d", w2.Code)
+	}
+}

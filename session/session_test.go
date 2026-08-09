@@ -176,3 +176,85 @@ func TestMemoryStoreStartCleanup(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// TestRotate 覆盖会话轮换全部分支。
+func TestRotate(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(func() time.Time { return now })
+	if _, err := store.Rotate(ctx, "", time.Hour); err == nil || !errx.Is(err, authx.CodeSessionInvalid) {
+		t.Fatalf("空 ID 应报错，实际：%v", err)
+	}
+	if _, err := store.Rotate(ctx, "x", 0); err == nil || !errx.Is(err, authx.CodeSessionInvalid) {
+		t.Fatalf("零 TTL 应报错，实际：%v", err)
+	}
+	if _, err := store.Rotate(ctx, "missing", time.Hour); err == nil || !errx.Is(err, authx.CodeSessionNotFound) {
+		t.Fatalf("不存在应报错，实际：%v", err)
+	}
+	old, err := store.Create(ctx, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old.Values["k"] = "v"
+	if err := store.Save(ctx, old, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	rotated, err := store.Rotate(ctx, old.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rotated.ID == old.ID || rotated.Values["k"] != "v" {
+		t.Fatalf("轮换应保留值并更换 ID：%+v", rotated)
+	}
+	if _, err := store.Get(ctx, old.ID); err == nil {
+		t.Fatal("旧会话应已删除")
+	}
+	got, err := store.Get(ctx, rotated.ID)
+	if err != nil || got.Values["k"] != "v" {
+		t.Fatalf("新会话应可读取：%+v err=%v", got, err)
+	}
+	// 过期会话轮换。
+	expired, err := store.Create(ctx, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Hour)
+	if _, err := store.Rotate(ctx, expired.ID, time.Hour); err == nil || !errx.Is(err, authx.CodeSessionNotFound) {
+		t.Fatalf("过期会话应报错，实际：%v", err)
+	}
+}
+
+// TestRotateRandFail 覆盖轮换时随机源故障。
+func TestRotateRandFail(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore(nil)
+	sess, err := store.Create(ctx, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := randRead
+	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
+	defer func() { randRead = orig }()
+	if _, err := store.Rotate(ctx, sess.ID, time.Hour); err == nil ||
+		!errx.Is(err, authx.CodeSessionStoreInvalid) {
+		t.Fatalf("随机源故障应报错，实际：%v", err)
+	}
+}
+
+// TestRotateConflict 覆盖轮换 ID 冲突耗尽。
+func TestRotateConflict(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore(nil)
+	fixed := []byte("0123456789abcdef0123456789abcdef")
+	orig := randRead
+	randRead = func(b []byte) (int, error) { return copy(b, fixed), nil }
+	defer func() { randRead = orig }()
+	sess, err := store.Create(ctx, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Rotate(ctx, sess.ID, time.Hour); err == nil ||
+		!errx.Is(err, authx.CodeSessionStoreInvalid) {
+		t.Fatalf("冲突耗尽应报错，实际：%v", err)
+	}
+}

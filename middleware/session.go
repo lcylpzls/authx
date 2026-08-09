@@ -8,10 +8,14 @@ import (
 
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/authx/session"
+	"github.com/lcylpzls/logx"
 	"github.com/lcylpzls/webx"
 )
 
-const ctxKeySession = "authx_session"
+const (
+	ctxKeySession       = "authx_session"
+	ctxKeySessionConfig = "authx_session_config"
+)
 
 // sessionOptions 会话中间件配置。
 type sessionOptions struct {
@@ -20,6 +24,8 @@ type sessionOptions struct {
 	httpOnly bool
 	path     string
 	sameSite http.SameSite
+	logger   logx.Logger
+	now      func() time.Time
 }
 
 // SessionOption 会话中间件配置项。
@@ -50,6 +56,16 @@ func WithSessionSameSite(sameSite http.SameSite) SessionOption {
 	return func(o *sessionOptions) { o.sameSite = sameSite }
 }
 
+// WithSessionLogger 注入日志器：会话保存失败时记录告警（nil 表示不记录）。
+func WithSessionLogger(logger logx.Logger) SessionOption {
+	return func(o *sessionOptions) { o.logger = logger }
+}
+
+// WithSessionClock 注入时间源（测试用）。
+func WithSessionClock(now func() time.Time) SessionOption {
+	return func(o *sessionOptions) { o.now = now }
+}
+
 // Session 构造会话中间件：读取/创建会话，请求结束后自动保存。
 // 处理器内通过 SessionFrom 读取，修改 Values 后由中间件统一落库。
 func Session(store session.Store, cookieName string, opts ...SessionOption) webx.HandlerFunc {
@@ -62,6 +78,7 @@ func Session(store session.Store, cookieName string, opts ...SessionOption) webx
 		httpOnly: true,
 		path:     "/",
 		sameSite: http.SameSiteLaxMode,
+		now:      time.Now,
 	}
 	for _, opt := range opts {
 		opt(o)
@@ -69,6 +86,11 @@ func Session(store session.Store, cookieName string, opts ...SessionOption) webx
 	if o.ttl <= 0 {
 		panic("authx: 会话有效期必须为正")
 	}
+	if o.now == nil {
+		o.now = time.Now
+	}
+	cfg := &sessionConfig{store: store, cookieName: cookieName, ttl: o.ttl, secure: o.secure,
+		httpOnly: o.httpOnly, path: o.path, sameSite: o.sameSite, now: o.now, logger: o.logger}
 	return func(c *webx.Context) {
 		ctx := c.Request().Context()
 		sess, err := loadSession(ctx, store, c, cookieName)
@@ -90,13 +112,70 @@ func Session(store session.Store, cookieName string, opts ...SessionOption) webx
 				Secure:   o.secure,
 				HttpOnly: o.httpOnly,
 				SameSite: o.sameSite,
-				Expires:  time.Now().Add(o.ttl),
+				Expires:  o.now().Add(o.ttl),
 			})
 		}
+		c.Set(ctxKeySessionConfig, cfg)
 		c.Set(ctxKeySession, sess)
 		c.Next()
-		_ = store.Save(ctx, sess, o.ttl)
+		// 处理器内可能已通过 RotateSession 轮换会话，保存前重新读取最新会话。
+		if latest, ok := c.Get(ctxKeySession); ok {
+			if s, ok := latest.(session.Session); ok && s.ID != "" {
+				sess = s
+			}
+		}
+		if err := store.Save(ctx, sess, o.ttl); err != nil && o.logger != nil {
+			o.logger.Warn("会话保存失败", logx.Fields(
+				logx.String("session_id", sess.ID),
+				logx.String("error", err.Error()),
+			))
+		}
 	}
+}
+
+// sessionConfig 会话中间件配置快照（供 RotateSession 使用）。
+type sessionConfig struct {
+	store      session.Store
+	cookieName string
+	ttl        time.Duration
+	secure     bool
+	httpOnly   bool
+	path       string
+	sameSite   http.SameSite
+	now        func() time.Time
+	logger     logx.Logger
+}
+
+// RotateSession 轮换当前会话 ID（防会话固定攻击），并同步更新 Cookie 与上下文。
+// 仅在经过 Session 中间件的处理器中调用；未装配会话或读取会话失败时返回错误。
+func RotateSession(c *webx.Context) error {
+	v, ok := c.Get(ctxKeySessionConfig)
+	if !ok {
+		return authx.ErrSessionInvalid
+	}
+	cfg, ok := v.(*sessionConfig)
+	if !ok {
+		return authx.ErrSessionInvalid
+	}
+	sess, ok := SessionFrom(c)
+	if !ok || sess.ID == "" {
+		return authx.ErrSessionNotFound
+	}
+	rotated, err := cfg.store.Rotate(c.Request().Context(), sess.ID, cfg.ttl)
+	if err != nil {
+		return err
+	}
+	c.SetCookie(&http.Cookie{
+		Name:     cfg.cookieName,
+		Value:    rotated.ID,
+		Path:     cfg.path,
+		Secure:   cfg.secure,
+		HttpOnly: cfg.httpOnly,
+		SameSite: cfg.sameSite,
+		Expires:  cfg.now().Add(cfg.ttl),
+	})
+	c.Set(ctxKeySession, rotated)
+	return nil
 }
 
 // SessionFrom 从上下文读取会话。

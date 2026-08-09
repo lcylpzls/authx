@@ -1,12 +1,17 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/authx/rbac"
 	"github.com/lcylpzls/authx/token"
+	"github.com/lcylpzls/errx"
 	"github.com/lcylpzls/webx"
 )
 
@@ -51,7 +56,7 @@ func TestAuth(t *testing.T) {
 	if w.Code != http.StatusUnauthorized || handled {
 		t.Fatalf("无令牌应 401：code=%d handled=%v", w.Code, handled)
 	}
-	if got := w.Header().Get("WWW-Authenticate"); got != "Bearer realm=console" {
+	if got := w.Header().Get("WWW-Authenticate"); got != `Bearer realm="console"` {
 		t.Fatalf("WWW-Authenticate 不符：%q", got)
 	}
 	// 非法令牌。
@@ -253,9 +258,166 @@ func TestBearerToken(t *testing.T) {
 	if _, ok := bearerToken("Bearer "); ok {
 		t.Fatal("空令牌不应通过")
 	}
+	if _, ok := bearerToken("Bearer " + strings.Repeat("x", maxBearerLength+1)); ok {
+		t.Fatal("超长令牌不应通过")
+	}
 	raw, ok := bearerToken("Bearer  abc  ")
 	if !ok || raw != "abc" {
 		t.Fatalf("令牌提取不符：%q %v", raw, ok)
+	}
+}
+
+// TestAuthRealmEscape 覆盖 realm 引号与反斜杠转义。
+func TestAuthRealmEscape(t *testing.T) {
+	s := newSigner(t)
+	mw := Auth(s, WithRealm(`con"sole\`))
+	w, _ := runChain(t, http.MethodGet, mw)
+	if got := w.Header().Get("WWW-Authenticate"); got != `Bearer realm="con\"sole\\"` {
+		t.Fatalf("realm 转义不符：%q", got)
+	}
+}
+
+// TestValidateCSRFToken 覆盖常量时间比较与长度防御分支。
+func TestValidateCSRFToken(t *testing.T) {
+	if !ValidateCSRFToken("abc", "abc") {
+		t.Fatal("相同令牌应通过")
+	}
+	if ValidateCSRFToken("abc", "abd") {
+		t.Fatal("不同令牌不应通过")
+	}
+	if ValidateCSRFToken("", "abc") || ValidateCSRFToken("abc", "") {
+		t.Fatal("空值不应通过")
+	}
+	if ValidateCSRFToken(strings.Repeat("x", maxCSRFTokenLength+1), "abc") ||
+		ValidateCSRFToken("abc", strings.Repeat("x", maxCSRFTokenLength+1)) {
+		t.Fatal("超长令牌不应通过")
+	}
+}
+
+// TestGenerateCSRFTokenError 覆盖随机源失败分支。
+func TestGenerateCSRFTokenError(t *testing.T) {
+	token, err := GenerateCSRFToken()
+	if err != nil || token == "" {
+		t.Fatalf("正常生成应成功：%q %v", token, err)
+	}
+	orig := randRead
+	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
+	defer func() { randRead = orig }()
+	if _, err := GenerateCSRFToken(); err == nil || !errx.Is(err, authx.CodeCSRFGenerationFailed) {
+		t.Fatalf("随机源故障应报错，实际：%v", err)
+	}
+}
+
+// TestCSRFProtect 覆盖双提交 Cookie 中间件全部分支。
+func TestCSRFProtect(t *testing.T) {
+	mw := CSRFProtect("csrf", "X-CSRF-Token",
+		WithCSRFSecure(false), WithCSRFHTTPOnly(false), WithCSRFPath("/app"),
+		WithCSRFSameSite(http.SameSiteStrictMode))
+	handled := false
+	// 首次 GET：无 Cookie → 种令牌并放行。
+	w, _ := runChain(t, http.MethodGet, mw, func(c *webx.Context) { handled = true })
+	if w.Code != http.StatusOK || !handled {
+		t.Fatalf("首次 GET 应放行并种 Cookie：code=%d handled=%v", w.Code, handled)
+	}
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != "csrf" || cookies[0].Value == "" ||
+		cookies[0].Path != "/app" || cookies[0].SameSite != http.SameSiteStrictMode {
+		t.Fatalf("CSRF Cookie 属性不符：%+v", cookies)
+	}
+	token := cookies[0].Value
+	// 安全方法放行（无需请求头）。
+	reqSafe := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	reqSafe.AddCookie(&http.Cookie{Name: "csrf", Value: token})
+	wSafe := httptest.NewRecorder()
+	cSafe := webx.NewContext(wSafe, reqSafe)
+	handled = false
+	cSafe.SetHandlers([]webx.HandlerFunc{mw, func(c *webx.Context) { handled = true }})
+	cSafe.Run()
+	if !handled {
+		t.Fatal("安全方法应放行")
+	}
+	// 非安全方法匹配 → 放行。
+	reqOK := httptest.NewRequest(http.MethodPost, "/ping", nil)
+	reqOK.AddCookie(&http.Cookie{Name: "csrf", Value: token})
+	reqOK.Header.Set("X-CSRF-Token", token)
+	wOK := httptest.NewRecorder()
+	cOK := webx.NewContext(wOK, reqOK)
+	handled = false
+	cOK.SetHandlers([]webx.HandlerFunc{mw, func(c *webx.Context) { handled = true }})
+	cOK.Run()
+	if wOK.Code != http.StatusOK || !handled {
+		t.Fatalf("匹配应放行：code=%d handled=%v", wOK.Code, handled)
+	}
+	// 不匹配 → 403。
+	reqBad := httptest.NewRequest(http.MethodPost, "/ping", nil)
+	reqBad.AddCookie(&http.Cookie{Name: "csrf", Value: token})
+	reqBad.Header.Set("X-CSRF-Token", "wrong")
+	wBad := httptest.NewRecorder()
+	cBad := webx.NewContext(wBad, reqBad)
+	handled = false
+	cBad.SetHandlers([]webx.HandlerFunc{mw, func(c *webx.Context) { handled = true }})
+	cBad.Run()
+	if wBad.Code != http.StatusForbidden || handled {
+		t.Fatalf("不匹配应 403：code=%d handled=%v", wBad.Code, handled)
+	}
+	// 非安全方法但无 Cookie → 403（已有 Cookie 缺失时不会重复种 Cookie？会种新 Cookie 但校验失败）。
+	reqNoCookie := httptest.NewRequest(http.MethodPost, "/ping", nil)
+	reqNoCookie.Header.Set("X-CSRF-Token", token)
+	wNoCookie := httptest.NewRecorder()
+	cNoCookie := webx.NewContext(wNoCookie, reqNoCookie)
+	handled = false
+	cNoCookie.SetHandlers([]webx.HandlerFunc{mw, func(c *webx.Context) { handled = true }})
+	cNoCookie.Run()
+	if wNoCookie.Code != http.StatusForbidden || handled {
+		t.Fatalf("缺 Cookie 非安全方法应 403：code=%d handled=%v", wNoCookie.Code, handled)
+	}
+}
+
+// TestCSRFProtectGenerationFailure 覆盖令牌生成失败返回 500。
+func TestCSRFProtectGenerationFailure(t *testing.T) {
+	orig := randRead
+	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
+	defer func() { randRead = orig }()
+	mw := CSRFProtect("csrf", "X-CSRF-Token")
+	w, _ := runChain(t, http.MethodGet, mw)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("生成失败应 500，实际 %d", w.Code)
+	}
+}
+
+// TestCSRFProtectPanics 覆盖 CSRFProtect 配置 panic。
+func TestCSRFProtectPanics(t *testing.T) {
+	for name, fn := range map[string]func(){
+		"空 Cookie 名": func() { _ = CSRFProtect("", "X") },
+		"空请求头名":      func() { _ = CSRFProtect("c", "") },
+		"零 TTL":      func() { _ = CSRFProtect("c", "X", WithCSRFTTL(0)) },
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Fatalf("%s 应 panic", name)
+				}
+			}()
+			fn()
+		}()
+	}
+}
+
+// TestCSRFClockOption 覆盖注入时钟与 nil 回退。
+func TestCSRFClockOption(t *testing.T) {
+	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
+	mw := CSRFProtect("csrf", "X-CSRF-Token",
+		WithCSRFClock(func() time.Time { return now }), WithCSRFSecure(false))
+	w, _ := runChain(t, http.MethodGet, mw)
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || !cookies[0].Expires.Equal(now.Add(defaultCSRFTTL)) {
+		t.Fatalf("CSRF Cookie 过期时间应使用注入时钟：%+v", cookies)
+	}
+	// nil 时钟回退到 time.Now，不应 panic。
+	mwNil := CSRFProtect("csrf", "X-CSRF-Token", WithCSRFClock(nil), WithCSRFSecure(false))
+	w2, _ := runChain(t, http.MethodGet, mwNil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("nil 时钟回退应正常放行：%d", w2.Code)
 	}
 }
 

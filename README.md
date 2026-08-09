@@ -64,6 +64,7 @@ need, err := password.NeedsRehash(hash, authx.DefaultPasswordConfig())
 | v0.5.0 | oauth2：客户端与授权码/PKCE 服务端（已发布） |
 | v0.6.0 | audit + security：审计、锁定、频控与 full 示例（已发布，版本线完成） |
 | v0.7.0 | 防 DoS 与资源上限：容量上限、周期清理、输入上限、随机源失败报错（已发布） |
+| v0.8.0 | 会话与 CSRF 加固：会话轮换、保存失败日志、CSRF 令牌、Auth 上限与转义（已发布） |
 
 ## 规范
 

@@ -2,6 +2,34 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+## [v0.8.0] - 2026-08-09
+
+### 新增
+
+- 会话轮换（防会话固定攻击）：
+  - `session.Store` 新增 `Rotate` 方法，`MemoryStore` 实现
+    （换新随机 ID、保留全部值、删除旧条目）；
+  - `middleware.RotateSession`：登录后一键轮换当前会话并同步更新
+    Cookie 与请求上下文；
+- 会话中间件加固：
+  - `WithSessionLogger`：保存失败时记录结构化告警（不再静默吞错）；
+  - `WithSessionClock`：Cookie 过期时间统一使用注入时钟；
+  - 请求结束后保存前重新读取上下文会话，保证轮换结果正确落库；
+- CSRF 加固：
+  - `CSRFProtect`：双提交 Cookie 中间件（自动签发 32 字节随机令牌、
+    安全方法放行、非安全方法常量时间校验、Cookie 属性可配置）；
+  - `GenerateCSRFToken`/`ValidateCSRFToken`：令牌生成与常量时间比较
+    （含长度上限防御）；
+  - 旧 `CSRF` 中间件同步改为常量时间比较；
+- 认证中间件加固：
+  - Bearer 令牌长度上限（4096），拒绝超长头；
+  - `WWW-Authenticate` realm 按 RFC 7235 转义引号与反斜杠；
+
+### 变更
+
+- `session.Store` 接口新增 `Rotate` 方法（破坏性变更，v1 前允许）；
+- 新增错误码：`authx_csrf_generation_failed`。
+
 ## [v0.7.0] - 2026-08-09
 
 ### 新增

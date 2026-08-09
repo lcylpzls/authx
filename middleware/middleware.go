@@ -28,9 +28,42 @@ const (
 // randRead 可替换的随机源，便于测试注入失败场景。
 var randRead = rand.Read
 
+// ErrorResponse 中间件统一 JSON 错误响应体（errx 语义）。
+type ErrorResponse struct {
+	// Code 错误码（如 authx_token_invalid）。
+	Code string `json:"code"`
+	// Kind 错误分类（如 unauthorized / forbidden / unavailable）。
+	Kind string `json:"kind"`
+	// Message 面向用户的错误描述。
+	Message string `json:"message"`
+}
+
+// ErrorHandler 自定义错误响应处理器；status 为建议 HTTP 状态码。
+type ErrorHandler func(c *webx.Context, status int, err error)
+
+// DefaultErrorHandler 输出结构化 JSON 错误响应。
+func DefaultErrorHandler(c *webx.Context, status int, err error) {
+	resp := errorResponseFrom(err)
+	c.AbortWithStatusJSON(status, resp.Message, resp)
+}
+
+// errorResponseFrom 从错误提取 errx 语义；非 errx 错误回退 unknown。
+func errorResponseFrom(err error) ErrorResponse {
+	resp := ErrorResponse{Message: "内部错误"}
+	if err != nil {
+		resp.Message = err.Error()
+	}
+	if code, ok := errx.CodeOf(err); ok {
+		resp.Code = string(code)
+	}
+	resp.Kind = errx.KindOf(err).String()
+	return resp
+}
+
 // authOptions 认证中间件配置。
 type authOptions struct {
-	realm string
+	realm        string
+	errorHandler ErrorHandler
 }
 
 // Option 认证中间件配置项。
@@ -41,13 +74,23 @@ func WithRealm(realm string) Option {
 	return func(o *authOptions) { o.realm = realm }
 }
 
+// WithAuthErrorHandler 自定义认证失败响应处理器。
+func WithAuthErrorHandler(handler ErrorHandler) Option {
+	return func(o *authOptions) {
+		if handler == nil {
+			panic("authx: 认证错误处理器不能为空")
+		}
+		o.errorHandler = handler
+	}
+}
+
 // Auth 构造 Bearer Token 认证中间件：解析并校验令牌，注入用户身份。
 // 校验失败返回 401 标准响应；成功后调用 c.Next() 继续处理链。
 func Auth(signer *token.Signer, opts ...Option) webx.HandlerFunc {
 	if signer == nil {
 		panic("authx: 签发器不能为空")
 	}
-	o := &authOptions{realm: "api"}
+	o := &authOptions{realm: "api", errorHandler: DefaultErrorHandler}
 	for _, opt := range opts {
 		opt(o)
 	}
@@ -56,13 +99,13 @@ func Auth(signer *token.Signer, opts ...Option) webx.HandlerFunc {
 		raw, ok := bearerToken(c.GetHeader("Authorization"))
 		if !ok {
 			c.Header("WWW-Authenticate", challenge)
-			c.AbortWithStatusJSON(http.StatusUnauthorized, "未认证", nil)
+			o.errorHandler(c, http.StatusUnauthorized, authx.ErrTokenMissing)
 			return
 		}
 		claims, err := signer.Parse(raw)
 		if err != nil {
 			c.Header("WWW-Authenticate", challenge)
-			c.AbortWithStatusJSON(http.StatusUnauthorized, "未认证或令牌无效", nil)
+			o.errorHandler(c, http.StatusUnauthorized, err)
 			return
 		}
 		c.Set(ctxKeyClaims, claims)
@@ -80,11 +123,11 @@ func RequirePermission(r *rbac.RBAC, permission string) webx.HandlerFunc {
 	return func(c *webx.Context) {
 		claims, ok := ClaimsFrom(c)
 		if !ok {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, "未认证", nil)
+			DefaultErrorHandler(c, http.StatusUnauthorized, authx.ErrTokenMissing)
 			return
 		}
 		if !r.HasAnyPermission(claims.Roles, permission) {
-			c.AbortWithStatusJSON(http.StatusForbidden, "无权限执行该操作", nil)
+			DefaultErrorHandler(c, http.StatusForbidden, authx.ErrForbidden)
 			return
 		}
 		c.Next()
@@ -99,7 +142,7 @@ func RequireRole(r *rbac.RBAC, role string) webx.HandlerFunc {
 	return func(c *webx.Context) {
 		claims, ok := ClaimsFrom(c)
 		if !ok {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, "未认证", nil)
+			DefaultErrorHandler(c, http.StatusUnauthorized, authx.ErrTokenMissing)
 			return
 		}
 		for _, have := range claims.Roles {
@@ -108,7 +151,7 @@ func RequireRole(r *rbac.RBAC, role string) webx.HandlerFunc {
 				return
 			}
 		}
-		c.AbortWithStatusJSON(http.StatusForbidden, "无权限执行该操作", nil)
+		DefaultErrorHandler(c, http.StatusForbidden, authx.ErrForbidden)
 	}
 }
 
@@ -131,7 +174,7 @@ func CSRF(cookieName, headerName string, skipMethods ...string) webx.HandlerFunc
 		}
 		cookie, err := c.Cookie(cookieName)
 		if err != nil || !ValidateCSRFToken(cookie.Value, c.GetHeader(headerName)) {
-			c.AbortWithStatusJSON(http.StatusForbidden, "CSRF 校验失败", nil)
+			DefaultErrorHandler(c, http.StatusForbidden, authx.ErrCSRFMismatch)
 			return
 		}
 		c.Next()
@@ -146,6 +189,7 @@ type csrfOptions struct {
 	sameSite http.SameSite
 	ttl      time.Duration
 	now      func() time.Time
+	err      ErrorHandler
 }
 
 // CSRFOption 双提交 CSRF 中间件配置项。
@@ -181,6 +225,16 @@ func WithCSRFClock(now func() time.Time) CSRFOption {
 	return func(o *csrfOptions) { o.now = now }
 }
 
+// WithCSRFErrorHandler 自定义 CSRF 校验失败响应处理器。
+func WithCSRFErrorHandler(handler ErrorHandler) CSRFOption {
+	return func(o *csrfOptions) {
+		if handler == nil {
+			panic("authx: CSRF 错误处理器不能为空")
+		}
+		o.err = handler
+	}
+}
+
 // GenerateCSRFToken 生成 32 字节随机 base64url 令牌。
 func GenerateCSRFToken() (string, error) {
 	b := make([]byte, csrfTokenBytes)
@@ -212,6 +266,7 @@ func CSRFProtect(cookieName, headerName string, opts ...CSRFOption) webx.Handler
 		sameSite: http.SameSiteLaxMode,
 		ttl:      defaultCSRFTTL,
 		now:      time.Now,
+		err:      DefaultErrorHandler,
 	}
 	for _, opt := range opts {
 		opt(o)
@@ -231,7 +286,7 @@ func CSRFProtect(cookieName, headerName string, opts ...CSRFOption) webx.Handler
 		if cookie, err := c.Cookie(cookieName); err != nil || cookie.Value == "" {
 			token, terr := GenerateCSRFToken()
 			if terr != nil {
-				c.AbortWithStatusJSON(http.StatusInternalServerError, "CSRF 初始化失败", nil)
+				o.err(c, http.StatusInternalServerError, authx.ErrCSRFGenerationFailed)
 				return
 			}
 			c.SetCookie(&http.Cookie{
@@ -253,7 +308,7 @@ func CSRFProtect(cookieName, headerName string, opts ...CSRFOption) webx.Handler
 			cookieValue = cookie.Value
 		}
 		if !ValidateCSRFToken(cookieValue, c.GetHeader(headerName)) {
-			c.AbortWithStatusJSON(http.StatusForbidden, "CSRF 校验失败", nil)
+			o.err(c, http.StatusForbidden, authx.ErrCSRFMismatch)
 			return
 		}
 		c.Next()

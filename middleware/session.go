@@ -26,6 +26,7 @@ type sessionOptions struct {
 	sameSite http.SameSite
 	logger   logx.Logger
 	now      func() time.Time
+	err      ErrorHandler
 }
 
 // SessionOption 会话中间件配置项。
@@ -66,6 +67,16 @@ func WithSessionClock(now func() time.Time) SessionOption {
 	return func(o *sessionOptions) { o.now = now }
 }
 
+// WithSessionErrorHandler 自定义会话服务错误响应处理器。
+func WithSessionErrorHandler(handler ErrorHandler) SessionOption {
+	return func(o *sessionOptions) {
+		if handler == nil {
+			panic("authx: 会话错误处理器不能为空")
+		}
+		o.err = handler
+	}
+}
+
 // Session 构造会话中间件：读取/创建会话，请求结束后自动保存。
 // 处理器内通过 SessionFrom 读取，修改 Values 后由中间件统一落库。
 func Session(store session.Store, cookieName string, opts ...SessionOption) webx.HandlerFunc {
@@ -79,6 +90,7 @@ func Session(store session.Store, cookieName string, opts ...SessionOption) webx
 		path:     "/",
 		sameSite: http.SameSiteLaxMode,
 		now:      time.Now,
+		err:      DefaultErrorHandler,
 	}
 	for _, opt := range opts {
 		opt(o)
@@ -95,13 +107,13 @@ func Session(store session.Store, cookieName string, opts ...SessionOption) webx
 		ctx := c.Request().Context()
 		sess, err := loadSession(ctx, store, c, cookieName)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusInternalServerError, "会话服务异常", nil)
+			o.err(c, http.StatusInternalServerError, err)
 			return
 		}
 		if sess.ID == "" {
 			created, cerr := store.Create(ctx, o.ttl)
 			if cerr != nil {
-				c.AbortWithStatusJSON(http.StatusInternalServerError, "会话创建失败", nil)
+				o.err(c, http.StatusInternalServerError, cerr)
 				return
 			}
 			sess = created

@@ -308,3 +308,37 @@ func TestSessionClock(t *testing.T) {
 		t.Fatalf("nil 时钟回退应正常放行：%d", w2.Code)
 	}
 }
+
+// TestSessionErrorHandler 覆盖会话自定义错误处理器。
+func TestSessionErrorHandler(t *testing.T) {
+	type call struct {
+		status int
+		err    error
+	}
+	calls := make([]call, 0, 1)
+	handler := func(c *webx.Context, status int, err error) {
+		calls = append(calls, call{status: status, err: err})
+		c.AbortWithStatusJSON(status, err.Error(), nil)
+	}
+	fail := failingSessionStore{err: errors.New("存储故障")}
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	req.AddCookie(&http.Cookie{Name: "sid", Value: "x"})
+	w := httptest.NewRecorder()
+	c := webx.NewContext(w, req)
+	c.SetHandlers([]webx.HandlerFunc{Session(fail, "sid", WithSessionErrorHandler(handler))})
+	c.Run()
+	if w.Code != http.StatusInternalServerError || len(calls) != 1 ||
+		!strings.Contains(calls[0].err.Error(), "存储故障") {
+		t.Fatalf("会话失败应调用自定义处理器：code=%d calls=%+v", w.Code, calls)
+	}
+}
+
+// TestWithSessionErrorHandlerPanic 覆盖 nil 处理器 panic。
+func TestWithSessionErrorHandlerPanic(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("nil 处理器应 panic")
+		}
+	}()
+	_ = Session(session.NewMemoryStore(nil), "sid", WithSessionErrorHandler(nil))
+}

@@ -67,6 +67,8 @@ const (
 	CodeCSRFGenerationFailed errx.Code = "authx_csrf_generation_failed"
 	// CodePasswordTooWeak 明文密码不满足强度策略。
 	CodePasswordTooWeak errx.Code = "authx_password_too_weak"
+	// CodeTokenMissing 请求未携带访问令牌（401）。
+	CodeTokenMissing errx.Code = "authx_token_missing"
 )
 
 // 预定义错误值，可用 errx.Is 判断。
@@ -125,4 +127,6 @@ var (
 	ErrCSRFGenerationFailed = errx.New(errx.KindUnavailable, CodeCSRFGenerationFailed, "CSRF 令牌生成失败")
 	// ErrPasswordTooWeak 明文密码不满足强度策略。
 	ErrPasswordTooWeak = errx.New(errx.KindInvalid, CodePasswordTooWeak, "密码强度不足")
+	// ErrTokenMissing 请求未携带访问令牌。
+	ErrTokenMissing = errx.New(errx.KindUnauthorized, CodeTokenMissing, "缺少访问令牌")
 )

@@ -421,6 +421,141 @@ func TestCSRFClockOption(t *testing.T) {
 	}
 }
 
+// TestErrorResponseFrom 覆盖错误响应体提取。
+func TestErrorResponseFrom(t *testing.T) {
+	resp := errorResponseFrom(authx.ErrTokenMissing)
+	if resp.Code != string(authx.CodeTokenMissing) || resp.Kind != "unauthorized" ||
+		!strings.Contains(resp.Message, "缺少访问令牌") {
+		t.Fatalf("errx 错误提取不符：%+v", resp)
+	}
+	plain := errorResponseFrom(errors.New("普通错误"))
+	if plain.Code != "" || plain.Kind != "unknown" || plain.Message != "普通错误" {
+		t.Fatalf("普通错误回退不符：%+v", plain)
+	}
+	nilResp := errorResponseFrom(nil)
+	if nilResp.Message != "内部错误" || nilResp.Kind != "unknown" {
+		t.Fatalf("nil 错误回退不符：%+v", nilResp)
+	}
+}
+
+// TestDefaultErrorHandler 覆盖默认处理器输出结构化 JSON。
+func TestDefaultErrorHandler(t *testing.T) {
+	w, c := runChain(t, http.MethodGet)
+	DefaultErrorHandler(c, http.StatusForbidden, authx.ErrForbidden)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("状态码不符：%d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `"authx_forbidden"`) || !strings.Contains(body, `"forbidden"`) {
+		t.Fatalf("响应应含结构化错误：%s", body)
+	}
+}
+
+// TestAuthErrorHandler 覆盖自定义认证错误处理器。
+func TestAuthErrorHandler(t *testing.T) {
+	s := newSigner(t)
+	type call struct {
+		status int
+		err    error
+	}
+	calls := make([]call, 0, 2)
+	handler := func(c *webx.Context, status int, err error) {
+		calls = append(calls, call{status: status, err: err})
+		c.AbortWithStatusJSON(status, err.Error(), nil)
+	}
+	mw := Auth(s, WithAuthErrorHandler(handler))
+	// 无令牌。
+	w, _ := runChain(t, http.MethodGet, mw)
+	if w.Code != http.StatusUnauthorized || len(calls) != 1 || !errx.Is(calls[0].err, authx.CodeTokenMissing) {
+		t.Fatalf("无令牌应调用自定义处理器：code=%d calls=%+v", w.Code, calls)
+	}
+	// 无效令牌。
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	req.Header.Set("Authorization", "Bearer bad.token")
+	w2 := httptest.NewRecorder()
+	c2 := webx.NewContext(w2, req)
+	c2.SetHandlers([]webx.HandlerFunc{mw})
+	c2.Run()
+	if w2.Code != http.StatusUnauthorized || len(calls) != 2 || !errx.Is(calls[1].err, authx.CodeTokenSignature) {
+		t.Fatalf("无效令牌应调用自定义处理器：code=%d calls=%+v", w2.Code, calls)
+	}
+}
+
+// TestWithAuthErrorHandlerPanic 覆盖 nil 处理器 panic。
+func TestWithAuthErrorHandlerPanic(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("nil 处理器应 panic")
+		}
+	}()
+	_ = Auth(newSigner(t), WithAuthErrorHandler(nil))
+}
+
+// TestCSRFErrorHandler 覆盖 CSRF 自定义错误处理器。
+func TestCSRFErrorHandler(t *testing.T) {
+	type call struct {
+		status int
+		err    error
+	}
+	calls := make([]call, 0, 1)
+	handler := func(c *webx.Context, status int, err error) {
+		calls = append(calls, call{status: status, err: err})
+		c.AbortWithStatusJSON(status, err.Error(), nil)
+	}
+	// 不匹配 → 403。
+	mw := CSRFProtect("csrf", "X-CSRF-Token", WithCSRFErrorHandler(handler), WithCSRFSecure(false))
+	req := httptest.NewRequest(http.MethodPost, "/ping", nil)
+	req.AddCookie(&http.Cookie{Name: "csrf", Value: "abc"})
+	req.Header.Set("X-CSRF-Token", "def")
+	w := httptest.NewRecorder()
+	c := webx.NewContext(w, req)
+	c.SetHandlers([]webx.HandlerFunc{mw})
+	c.Run()
+	if w.Code != http.StatusForbidden || len(calls) != 1 || !errx.Is(calls[0].err, authx.CodeCSRFMismatch) {
+		t.Fatalf("CSRF 失败应调用自定义处理器：code=%d calls=%+v", w.Code, calls)
+	}
+	// 生成失败 → 500。
+	orig := randRead
+	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
+	defer func() { randRead = orig }()
+	mw2 := CSRFProtect("csrf", "X-CSRF-Token", WithCSRFErrorHandler(handler))
+	w2, _ := runChain(t, http.MethodGet, mw2)
+	if w2.Code != http.StatusInternalServerError || len(calls) != 2 ||
+		!errx.Is(calls[1].err, authx.CodeCSRFGenerationFailed) {
+		t.Fatalf("生成失败应调用自定义处理器：code=%d calls=%+v", w2.Code, calls)
+	}
+}
+
+// TestWithCSRFErrorHandlerPanic 覆盖 nil 处理器 panic。
+func TestWithCSRFErrorHandlerPanic(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("nil 处理器应 panic")
+		}
+	}()
+	_ = CSRFProtect("c", "X", WithCSRFErrorHandler(nil))
+}
+
+// TestRequirePermissionStructured 覆盖 403 结构化输出。
+func TestRequirePermissionStructured(t *testing.T) {
+	rb := rbac.New()
+	_ = rb.AddRole("user", "order:read")
+	s := newSigner(t)
+	raw, _ := s.Sign("u-1", token.WithRoles("user"))
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	req.Header.Set("Authorization", "Bearer "+raw)
+	w := httptest.NewRecorder()
+	c := webx.NewContext(w, req)
+	c.SetHandlers([]webx.HandlerFunc{
+		Auth(s),
+		RequirePermission(rb, "order:write"),
+	})
+	c.Run()
+	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "authx_forbidden") {
+		t.Fatalf("403 应结构化输出：code=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
 // TestMiddlewarePanics 覆盖其余 panic 分支。
 func TestMiddlewarePanics(t *testing.T) {
 	rb := rbac.New()

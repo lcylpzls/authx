@@ -2,6 +2,18 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+## [v0.13.0] - 2026-08-09
+
+### 新增
+
+- 中间件错误响应工业化：
+  - `ErrorResponse` 统一 JSON 错误体（code/kind/message，errx 语义）；
+  - `DefaultErrorHandler` 默认结构化输出，挂载于 webx 标准化响应的 data；
+  - `WithAuthErrorHandler`/`WithCSRFErrorHandler`/`WithSessionErrorHandler`
+    可注入自定义错误处理器（状态码与响应体完全可控）；
+  - Auth/权限/CSRF/会话全部错误路径统一走结构化响应；
+- 新增错误码：`authx_token_missing`（未携带访问令牌）。
+
 ## [v0.12.0] - 2026-08-09
 
 ### 新增

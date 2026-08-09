@@ -68,3 +68,4 @@ jobs:
       - name: Fuzz short run (10s per target)
         run: |
           go test -run '^$' -fuzz '^FuzzVerify$' -fuzztime=10s ./password/
+          go test -run '^$' -fuzz '^FuzzParse$' -fuzztime=10s ./token/

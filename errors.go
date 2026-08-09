@@ -17,6 +17,20 @@ const (
 	CodePasswordConfigInvalid errx.Code = "authx_password_config_invalid"
 	// CodePasswordInternal 哈希/校验过程内部失败（随机盐生成等）。
 	CodePasswordInternal errx.Code = "authx_password_internal"
+	// CodeTokenInvalid 令牌格式非法或载荷非法。
+	CodeTokenInvalid errx.Code = "authx_token_invalid"
+	// CodeTokenExpired 令牌已过期。
+	CodeTokenExpired errx.Code = "authx_token_expired"
+	// CodeTokenSignature 令牌签名无效。
+	CodeTokenSignature errx.Code = "authx_token_signature"
+	// CodeTokenRevoked 令牌已撤销。
+	CodeTokenRevoked errx.Code = "authx_token_revoked"
+	// CodeTokenConfigInvalid 令牌配置非法（密钥过短、TTL 非正等）。
+	CodeTokenConfigInvalid errx.Code = "authx_token_config_invalid"
+	// CodeRefreshTokenInvalid 刷新令牌无效或已使用。
+	CodeRefreshTokenInvalid errx.Code = "authx_refresh_token_invalid"
+	// CodeStoreInvalid 存储参数非法。
+	CodeStoreInvalid errx.Code = "authx_store_invalid"
 )
 
 // 预定义错误值，可用 errx.Is 判断。
@@ -29,4 +43,14 @@ var (
 	ErrPasswordTooLong = errx.New(errx.KindInvalid, CodePasswordTooLong, "明文密码长度超过上限")
 	// ErrPasswordTooShort 明文密码低于长度下限。
 	ErrPasswordTooShort = errx.New(errx.KindInvalid, CodePasswordTooShort, "明文密码长度低于下限")
+	// ErrTokenInvalid 令牌格式非法或载荷非法。
+	ErrTokenInvalid = errx.New(errx.KindUnauthorized, CodeTokenInvalid, "令牌格式非法")
+	// ErrTokenExpired 令牌已过期。
+	ErrTokenExpired = errx.New(errx.KindUnauthorized, CodeTokenExpired, "令牌已过期")
+	// ErrTokenSignature 令牌签名无效。
+	ErrTokenSignature = errx.New(errx.KindUnauthorized, CodeTokenSignature, "令牌签名无效")
+	// ErrTokenRevoked 令牌已撤销。
+	ErrTokenRevoked = errx.New(errx.KindUnauthorized, CodeTokenRevoked, "令牌已撤销")
+	// ErrRefreshTokenInvalid 刷新令牌无效或已使用。
+	ErrRefreshTokenInvalid = errx.New(errx.KindUnauthorized, CodeRefreshTokenInvalid, "刷新令牌无效或已使用")
 )

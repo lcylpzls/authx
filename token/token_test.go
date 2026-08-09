@@ -8,7 +8,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -265,8 +264,8 @@ func TestSignBadKeyType(t *testing.T) {
 	}
 }
 
-// TestNewJTIFallback 覆盖随机源故障回退分支。
-func TestNewJTIFallback(t *testing.T) {
+// TestNewJTIError 覆盖随机源故障时签发失败（不回退弱标识）。
+func TestNewJTIError(t *testing.T) {
 	orig := randRead
 	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
 	defer func() { randRead = orig }()
@@ -274,12 +273,8 @@ func TestNewJTIFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := s.Sign("u-1")
-	if err != nil {
-		t.Fatalf("随机源故障时签发应回退成功：%v", err)
-	}
-	if !strings.Contains(raw, ".") {
-		t.Fatal("回退签发结果异常")
+	if _, err := s.Sign("u-1"); err == nil || !errx.Is(err, authx.CodeTokenInvalid) {
+		t.Fatalf("随机源故障时签发应失败，实际：%v", err)
 	}
 }
 

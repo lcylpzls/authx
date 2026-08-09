@@ -150,3 +150,62 @@ func TestCycleVisited(t *testing.T) {
 		t.Fatal("重复访问节点后仍应检测到可达目标")
 	}
 }
+
+// TestNewWithLimitsPanic 覆盖非法规模上限 panic。
+func TestNewWithLimitsPanic(t *testing.T) {
+	for _, args := range [][2]int{{0, 10}, {10, 0}} {
+		func(a, b int) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Error("非正上限应 panic")
+				}
+			}()
+			NewWithLimits(a, b)
+		}(args[0], args[1])
+	}
+}
+
+// TestMaxRoles 覆盖角色数量上限。
+func TestMaxRoles(t *testing.T) {
+	r := NewWithLimits(2, 10)
+	if err := r.AddRole("a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.AddRole("b"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.AddRole("c"); err == nil || !errx.Is(err, authx.CodeRBACLimit) {
+		t.Fatalf("角色数量超限应报错，实际：%v", err)
+	}
+}
+
+// TestMaxDepth 覆盖继承深度上限。
+func TestMaxDepth(t *testing.T) {
+	r := NewWithLimits(10, 3)
+	for _, name := range []string{"a", "b", "c", "d"} {
+		if err := r.AddRole(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := r.Inherit("b", "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Inherit("c", "b"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Inherit("d", "c"); err == nil || !errx.Is(err, authx.CodeRBACLimit) {
+		t.Fatalf("继承深度超限应报错，实际：%v", err)
+	}
+}
+
+// TestDepthVisited 直接构造已损坏的环，覆盖深度计算的 visited 分支。
+func TestDepthVisited(t *testing.T) {
+	r := New()
+	_ = r.AddRole("a")
+	_ = r.AddRole("b")
+	r.roles["a"].parents = []string{"b"}
+	r.roles["b"].parents = []string{"a"}
+	if got := r.depthOfLocked("a"); got == 0 {
+		t.Fatal("环内深度计算不应返回零")
+	}
+}

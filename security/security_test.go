@@ -147,3 +147,60 @@ func TestCleanupPartial(t *testing.T) {
 		t.Fatal("保留计数不应错误触发锁定")
 	}
 }
+
+// TestWithMaxEntriesInvalid 覆盖非法条目上限。
+func TestWithMaxEntriesInvalid(t *testing.T) {
+	if _, err := NewLoginGuard(3, time.Minute, WithMaxEntries(0)); err == nil ||
+		!errx.Is(err, authx.CodeSecurityConfigInvalid) {
+		t.Fatalf("非正上限应报错，实际：%v", err)
+	}
+}
+
+// TestMaxEntriesFull 覆盖容量满时拒绝记录新主体。
+func TestMaxEntriesFull(t *testing.T) {
+	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
+	g, err := NewLoginGuard(3, time.Minute, WithMaxEntries(2),
+		WithClock(func() time.Time { return now }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = g.RecordFailure("a")
+	_ = g.RecordFailure("b")
+	if g.RecordFailure("c") {
+		t.Fatal("容量满时新主体不应触发锁定")
+	}
+	if g.IsLocked("c") {
+		t.Fatal("容量满时新主体不应被记录")
+	}
+	// 已记录主体在容量满时仍可继续累计。
+	if g.RecordFailure("a") {
+		t.Fatal("已记录主体应继续累计")
+	}
+}
+
+// TestLoginGuardStartCleanup 覆盖守卫周期清理。
+func TestLoginGuardStartCleanup(t *testing.T) {
+	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
+	g, err := NewLoginGuard(2, time.Minute, WithClock(func() time.Time { return now }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = g.RecordFailure("u-1")
+	_ = g.RecordFailure("u-1")
+	if !g.IsLocked("u-1") {
+		t.Fatal("应处于锁定")
+	}
+	now = now.Add(2 * time.Minute)
+	h := g.StartCleanup(10 * time.Millisecond)
+	defer h.Stop()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if !g.IsLocked("u-1") {
+			break // 已清理解锁。
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("周期清理未生效")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

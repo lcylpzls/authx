@@ -187,10 +187,14 @@ func (s *Signer) Sign(subject string, opts ...ClaimOption) (string, error) {
 		return "", errx.New(errx.KindInvalid, authx.CodeTokenInvalid, "令牌主体不能为空")
 	}
 	now := s.now()
+	jti, err := newJTI()
+	if err != nil {
+		return "", errx.Wrap(err, errx.KindUnavailable, authx.CodeTokenInvalid, "令牌标识生成失败")
+	}
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   subject,
-			ID:        newJTI(),
+			ID:        jti,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(s.ttl)),
 			NotBefore: jwt.NewNumericDate(now),
@@ -254,12 +258,11 @@ func classifyParseError(err error) error {
 	}
 }
 
-// newJTI 生成 32 字节随机十六进制 jti。
-func newJTI() string {
+// newJTI 生成 16 字节随机十六进制 jti；随机源失败返回错误，不回退弱标识。
+func newJTI() (string, error) {
 	b := make([]byte, 16)
 	if _, err := randRead(b); err != nil {
-		// 随机源故障时回退到时间戳（仅影响撤销粒度，不阻断签发）。
-		return hex.EncodeToString([]byte(time.Now().Format(time.RFC3339Nano)))
+		return "", err
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }

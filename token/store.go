@@ -9,6 +9,8 @@ import (
 	"github.com/lcylpzls/errx"
 )
 
+const defaultMaxEntries = 100000 // 内存存储容量上限（防内存无限增长）
+
 // RefreshStore 刷新令牌存储接口（可接入 Redis 等外部实现）。
 type RefreshStore interface {
 	// Save 保存刷新令牌哈希与过期时间。
@@ -34,17 +36,27 @@ type memoryItem struct {
 
 // MemoryRefreshStore 内存刷新令牌存储（进程内，单实例场景）。
 type MemoryRefreshStore struct {
-	mu    sync.Mutex
-	items map[string]memoryItem
-	now   func() time.Time
+	mu         sync.Mutex
+	items      map[string]memoryItem
+	now        func() time.Time
+	maxEntries int
 }
 
 // NewMemoryRefreshStore 构造内存刷新令牌存储。
 func NewMemoryRefreshStore(now func() time.Time) *MemoryRefreshStore {
+	return NewMemoryRefreshStoreWithLimit(now, defaultMaxEntries)
+}
+
+// NewMemoryRefreshStoreWithLimit 构造带容量上限的内存刷新令牌存储。
+// maxEntries 必须为正，否则 panic（配置错误应尽早暴露）。
+func NewMemoryRefreshStoreWithLimit(now func() time.Time, maxEntries int) *MemoryRefreshStore {
+	if maxEntries <= 0 {
+		panic("authx: 刷新令牌存储容量上限必须为正")
+	}
 	if now == nil {
 		now = time.Now
 	}
-	return &MemoryRefreshStore{items: make(map[string]memoryItem), now: now}
+	return &MemoryRefreshStore{items: make(map[string]memoryItem), now: now, maxEntries: maxEntries}
 }
 
 // Save 保存刷新令牌哈希。
@@ -54,6 +66,9 @@ func (s *MemoryRefreshStore) Save(_ context.Context, hash string, ttl time.Durat
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, ok := s.items[hash]; !ok && len(s.items) >= s.maxEntries {
+		return authx.ErrStoreFull
+	}
 	s.items[hash] = memoryItem{expires: s.now().Add(ttl)}
 	return nil
 }
@@ -96,19 +111,34 @@ func (s *MemoryRefreshStore) Cleanup() int {
 	return removed
 }
 
+// StartCleanup 启动周期性过期清理（间隔必须为正），返回句柄；Stop 停止并等待退出。
+func (s *MemoryRefreshStore) StartCleanup(interval time.Duration) *authx.CleanupHandle {
+	return authx.StartCleanup(interval, s.Cleanup)
+}
+
 // MemoryRevocationStore 内存撤销列表。
 type MemoryRevocationStore struct {
-	mu    sync.Mutex
-	items map[string]memoryItem
-	now   func() time.Time
+	mu         sync.Mutex
+	items      map[string]memoryItem
+	now        func() time.Time
+	maxEntries int
 }
 
 // NewMemoryRevocationStore 构造内存撤销列表。
 func NewMemoryRevocationStore(now func() time.Time) *MemoryRevocationStore {
+	return NewMemoryRevocationStoreWithLimit(now, defaultMaxEntries)
+}
+
+// NewMemoryRevocationStoreWithLimit 构造带容量上限的内存撤销列表。
+// maxEntries 必须为正，否则 panic（配置错误应尽早暴露）。
+func NewMemoryRevocationStoreWithLimit(now func() time.Time, maxEntries int) *MemoryRevocationStore {
+	if maxEntries <= 0 {
+		panic("authx: 撤销列表容量上限必须为正")
+	}
 	if now == nil {
 		now = time.Now
 	}
-	return &MemoryRevocationStore{items: make(map[string]memoryItem), now: now}
+	return &MemoryRevocationStore{items: make(map[string]memoryItem), now: now, maxEntries: maxEntries}
 }
 
 // Revoke 撤销 jti。
@@ -118,6 +148,9 @@ func (s *MemoryRevocationStore) Revoke(_ context.Context, jti string, ttl time.D
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, ok := s.items[jti]; !ok && len(s.items) >= s.maxEntries {
+		return authx.ErrStoreFull
+	}
 	s.items[jti] = memoryItem{expires: s.now().Add(ttl)}
 	return nil
 }
@@ -150,6 +183,11 @@ func (s *MemoryRevocationStore) Cleanup() int {
 		}
 	}
 	return removed
+}
+
+// StartCleanup 启动周期性过期清理（间隔必须为正），返回句柄；Stop 停止并等待退出。
+func (s *MemoryRevocationStore) StartCleanup(interval time.Duration) *authx.CleanupHandle {
+	return authx.StartCleanup(interval, s.Cleanup)
 }
 
 // errStoreInvalid 构造存储参数错误。

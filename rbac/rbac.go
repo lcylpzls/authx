@@ -7,10 +7,17 @@ import (
 	"github.com/lcylpzls/authx"
 )
 
+const (
+	defaultMaxRoles = 10000 // 角色数量上限（防内存无限增长）
+	defaultMaxDepth = 32    // 角色继承链深度上限（防极端链导致递归过深）
+)
+
 // RBAC 角色-权限存储（读写并发安全）。
 type RBAC struct {
-	mu    sync.RWMutex
-	roles map[string]*role
+	mu       sync.RWMutex
+	roles    map[string]*role
+	maxRoles int
+	maxDepth int
 }
 
 // role 单个角色定义。
@@ -22,7 +29,16 @@ type role struct {
 
 // New 构造空 RBAC。
 func New() *RBAC {
-	return &RBAC{roles: make(map[string]*role)}
+	return NewWithLimits(defaultMaxRoles, defaultMaxDepth)
+}
+
+// NewWithLimits 构造带规模上限的 RBAC。
+// maxRoles 与 maxDepth 必须为正，否则 panic（配置错误应尽早暴露）。
+func NewWithLimits(maxRoles, maxDepth int) *RBAC {
+	if maxRoles <= 0 || maxDepth <= 0 {
+		panic("authx: RBAC 规模上限必须为正")
+	}
+	return &RBAC{roles: make(map[string]*role), maxRoles: maxRoles, maxDepth: maxDepth}
 }
 
 // AddRole 添加角色及初始权限；空角色名或已存在角色返回错误。
@@ -34,6 +50,9 @@ func (r *RBAC) AddRole(name string, permissions ...string) error {
 	defer r.mu.Unlock()
 	if _, ok := r.roles[name]; ok {
 		return authx.ErrRoleExists
+	}
+	if len(r.roles) >= r.maxRoles {
+		return authx.ErrRBACLimit
 	}
 	rl := &role{name: name, permissions: make(map[string]struct{})}
 	for _, p := range permissions {
@@ -81,8 +100,31 @@ func (r *RBAC) Inherit(name, parent string) error {
 	if r.createsCycleLocked(parent, name) {
 		return authx.ErrCycle
 	}
+	if r.depthOfLocked(parent)+1 > r.maxDepth {
+		return authx.ErrRBACLimit
+	}
 	rl.parents = append(rl.parents, parent)
 	return nil
+}
+
+// depthOfLocked 返回角色的最大继承链深度（自身为 1，调用方持读锁）。
+func (r *RBAC) depthOfLocked(name string) int {
+	visited := make(map[string]bool)
+	var depth func(string) int
+	depth = func(current string) int {
+		if visited[current] {
+			return 0 // 环已在 Inherit 中拦截，此处仅防御。
+		}
+		visited[current] = true
+		best := 0
+		for _, p := range r.roles[current].parents {
+			if d := depth(p); d > best {
+				best = d
+			}
+		}
+		return best + 1
+	}
+	return depth(name)
 }
 
 // createsCycleLocked 检查 parent 的祖先链是否包含 name（含未上锁调用约定）。

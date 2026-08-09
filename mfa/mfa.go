@@ -18,10 +18,12 @@ import (
 )
 
 const (
-	defaultPeriod   = 30 * time.Second
-	secretBytes     = 20
-	recoveryBytes   = 16
-	recoveryPadding = "-"
+	defaultPeriod     = 30 * time.Second
+	secretBytes       = 20
+	recoveryBytes     = 16
+	recoveryPadding   = "-"
+	maxRecoveryCodes  = 1000 // 单次生成恢复码数量上限（防 DoS）
+	maxValidationSkew = 10   // TOTP 校验窗口偏移上限（防循环放大）
 )
 
 // randRead 可替换的随机源，便于测试注入失败场景。
@@ -55,6 +57,9 @@ func GenerateCode(secret string, at time.Time) (string, error) {
 
 // ValidateCode 校验验证码，允许前后 skew 个时间窗口。
 func ValidateCode(secret, code string, at time.Time, skew uint) (bool, error) {
+	if skew > maxValidationSkew {
+		return false, authx.ErrMFAConfigInvalid
+	}
 	if len(code) != 6 {
 		return false, authx.ErrMFAInvalid
 	}
@@ -87,7 +92,7 @@ func ProvisioningURI(secret, account, issuer string) string {
 
 // GenerateRecoveryCodes 生成 count 个恢复码（16 字节随机，base32 无填充，4 位一组）。
 func GenerateRecoveryCodes(count int) ([]string, error) {
-	if count <= 0 {
+	if count <= 0 || count > maxRecoveryCodes {
 		return nil, authx.ErrMFAConfigInvalid
 	}
 	codes := make([]string, 0, count)

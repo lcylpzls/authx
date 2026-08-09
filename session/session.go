@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	idBytes     = 32
-	createRetry = 3
+	idBytes           = 32
+	createRetry       = 3
+	defaultMaxEntries = 100000 // 会话数量上限（防内存无限增长）
 )
 
 // randRead 可替换的随机源，便于测试注入失败与冲突场景。
@@ -46,17 +47,27 @@ type sessionItem struct {
 
 // MemoryStore 内存会话存储（进程内单实例场景）。
 type MemoryStore struct {
-	mu    sync.Mutex
-	items map[string]sessionItem
-	now   func() time.Time
+	mu         sync.Mutex
+	items      map[string]sessionItem
+	now        func() time.Time
+	maxEntries int
 }
 
 // NewMemoryStore 构造内存会话存储。
 func NewMemoryStore(now func() time.Time) *MemoryStore {
+	return NewMemoryStoreWithLimit(now, defaultMaxEntries)
+}
+
+// NewMemoryStoreWithLimit 构造带容量上限的内存会话存储。
+// maxEntries 必须为正，否则 panic（配置错误应尽早暴露）。
+func NewMemoryStoreWithLimit(now func() time.Time, maxEntries int) *MemoryStore {
+	if maxEntries <= 0 {
+		panic("authx: 会话存储容量上限必须为正")
+	}
 	if now == nil {
 		now = time.Now
 	}
-	return &MemoryStore{items: make(map[string]sessionItem), now: now}
+	return &MemoryStore{items: make(map[string]sessionItem), now: now, maxEntries: maxEntries}
 }
 
 // Create 创建并保存新会话。
@@ -67,9 +78,15 @@ func (s *MemoryStore) Create(ctx context.Context, ttl time.Duration) (Session, e
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for attempt := 0; attempt < createRetry; attempt++ {
-		id := newSessionID()
+		id, err := newSessionID()
+		if err != nil {
+			return Session{}, errx.Wrap(err, errx.KindUnavailable, authx.CodeSessionStoreInvalid, "会话 ID 生成失败")
+		}
 		if _, ok := s.items[id]; ok {
 			continue // ID 冲突，重试。
+		}
+		if len(s.items) >= s.maxEntries {
+			return Session{}, authx.ErrStoreFull
 		}
 		sess := Session{ID: id, Values: make(map[string]string)}
 		s.saveLocked(sess, ttl)
@@ -104,6 +121,9 @@ func (s *MemoryStore) Save(_ context.Context, sess Session, ttl time.Duration) e
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, ok := s.items[sess.ID]; !ok && len(s.items) >= s.maxEntries {
+		return authx.ErrStoreFull
+	}
 	s.saveLocked(sess, ttl)
 	return nil
 }
@@ -142,14 +162,18 @@ func (s *MemoryStore) Cleanup() int {
 	return removed
 }
 
+// StartCleanup 启动周期性过期清理（间隔必须为正），返回句柄；Stop 停止并等待退出。
+func (s *MemoryStore) StartCleanup(interval time.Duration) *authx.CleanupHandle {
+	return authx.StartCleanup(interval, s.Cleanup)
+}
+
 // newSessionID 生成 32 字节随机十六进制会话 ID。
-func newSessionID() string {
+func newSessionID() (string, error) {
 	b := make([]byte, idBytes)
 	if _, err := randRead(b); err != nil {
-		// 随机源故障时回退到时间戳（唯一性降低，仅测试/故障兜底）。
-		return hex.EncodeToString([]byte(time.Now().Format(time.RFC3339Nano)))
+		return "", err
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 // cloneSession 深拷贝会话。

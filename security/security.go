@@ -9,11 +9,14 @@ import (
 	"github.com/lcylpzls/errx"
 )
 
+const defaultMaxEntries = 100000 // 守卫条目数量上限（防内存无限增长）
+
 // LoginGuard 登录防爆破守卫（按主体 key 计数与锁定）。
 type LoginGuard struct {
 	maxFailures  int
 	lockDuration time.Duration
 	window       time.Duration
+	maxEntries   int
 	mu           sync.Mutex
 	failures     map[string][]time.Time
 	locked       map[string]time.Time
@@ -45,6 +48,17 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
+// WithMaxEntries 设置守卫条目数量上限（超过后拒绝记录新主体的失败）。
+func WithMaxEntries(maxEntries int) Option {
+	return func(g *LoginGuard) error {
+		if maxEntries <= 0 {
+			return errx.New(errx.KindInvalid, authx.CodeSecurityConfigInvalid, "条目上限必须为正")
+		}
+		g.maxEntries = maxEntries
+		return nil
+	}
+}
+
 // NewLoginGuard 构造登录守卫。
 func NewLoginGuard(maxFailures int, lockDuration time.Duration, opts ...Option) (*LoginGuard, error) {
 	if maxFailures <= 0 || lockDuration <= 0 {
@@ -54,6 +68,7 @@ func NewLoginGuard(maxFailures int, lockDuration time.Duration, opts ...Option) 
 		maxFailures:  maxFailures,
 		lockDuration: lockDuration,
 		window:       10 * time.Minute,
+		maxEntries:   defaultMaxEntries,
 		failures:     make(map[string][]time.Time),
 		locked:       make(map[string]time.Time),
 		now:          time.Now,
@@ -73,6 +88,10 @@ func (g *LoginGuard) RecordFailure(key string) bool {
 	now := g.now()
 	if until, ok := g.locked[key]; ok && now.Before(until) {
 		return true
+	}
+	if _, exists := g.failures[key]; !exists && len(g.failures)+len(g.locked) >= g.maxEntries {
+		// 容量已满且该主体无记录：拒绝记录，防止攻击者用海量 key 撑爆内存。
+		return false
 	}
 	cutoff := now.Add(-g.window)
 	kept := g.failures[key][:0]
@@ -142,4 +161,9 @@ func (g *LoginGuard) Cleanup() int {
 		}
 	}
 	return removed
+}
+
+// StartCleanup 启动周期性过期清理（间隔必须为正），返回句柄；Stop 停止并等待退出。
+func (g *LoginGuard) StartCleanup(interval time.Duration) *authx.CleanupHandle {
+	return authx.StartCleanup(interval, g.Cleanup)
 }

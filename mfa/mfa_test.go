@@ -85,6 +85,10 @@ func TestValidateCode(t *testing.T) {
 	if _, err := ValidateCode("!!!", "287082", at, 0); err == nil || !errx.Is(err, authx.CodeMFAInvalid) {
 		t.Fatalf("非法密钥应报错，实际：%v", err)
 	}
+	if _, err := ValidateCode(secret, "287082", at, maxValidationSkew+1); err == nil ||
+		!errx.Is(err, authx.CodeMFAConfigInvalid) {
+		t.Fatalf("超上限 skew 应报错，实际：%v", err)
+	}
 }
 
 // TestProvisioningURI 覆盖二维码 URI。
@@ -101,6 +105,10 @@ func TestProvisioningURI(t *testing.T) {
 func TestRecoveryCodes(t *testing.T) {
 	if _, err := GenerateRecoveryCodes(0); err == nil || !errx.Is(err, authx.CodeMFAConfigInvalid) {
 		t.Fatalf("零数量应报错，实际：%v", err)
+	}
+	if _, err := GenerateRecoveryCodes(maxRecoveryCodes + 1); err == nil ||
+		!errx.Is(err, authx.CodeMFAConfigInvalid) {
+		t.Fatalf("超上限数量应报错，实际：%v", err)
 	}
 	codes, err := GenerateRecoveryCodes(3)
 	if err != nil {

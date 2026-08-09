@@ -2,6 +2,31 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+## [v0.7.0] - 2026-08-09
+
+### 新增
+
+- 统一周期清理调度（`authx.StartCleanup`/`CleanupHandle`）：
+  - 会话存储、刷新令牌存储、撤销列表、登录守卫均提供
+    `StartCleanup(interval)`，可自动回收过期条目；
+- 内存存储容量上限（防内存无限增长）：
+  - `session.MemoryStore`、`token.MemoryRefreshStore`、
+    `token.MemoryRevocationStore` 默认上限 10 万条，
+    满时新增条目返回 `ErrStoreFull`，更新已有条目不受影响；
+  - 登录守卫 `WithMaxEntries` 配置条目上限，满时拒绝记录新主体；
+  - RBAC `NewWithLimits(maxRoles, maxDepth)`：角色数量上限与
+    继承深度上限（默认 1 万角色 / 32 层），超限返回 `ErrRBACLimit`；
+- 防御性输入上限：
+  - 恢复码单次生成数量上限（1000）；
+  - TOTP 校验 skew 偏移上限（10 个窗口）；
+- 随机源故障不再回退弱标识：jti 与会话 ID 生成失败时
+  签发/创建明确返回错误，杜绝唯一性降级；
+
+### 变更
+
+- `newJTI`/`newSessionID` 由“失败回退时间戳”改为“失败返回错误”；
+- 新增错误码：`authx_store_full`、`authx_rbac_limit`。
+
 ## [v0.6.0] - 2026-08-09
 
 ### 新增
@@ -14,11 +39,6 @@
     `IsLocked`/`Reset`/`Cleanup`，时间源可注入；
 - examples/full：全套组件组合示例（密码 → 令牌 → RBAC → 会话 →
   TOTP → 防爆破 → OAuth2 → webx 装配），`run()` 可测试执行；
-
-### 版本线
-
-- v0.1.0 - v0.6.0 全部完成并发布，按计划**停止于 v0.6.0**，不发布 v1.0.0；
-- 核心包语句覆盖率 100%，三平台 CI + race + fuzz + Release 全绿。
 
 ## [v0.5.0] - 2026-08-09
 

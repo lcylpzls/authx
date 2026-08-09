@@ -59,6 +59,10 @@ const (
 	CodeOAuth2ConfigInvalid errx.Code = "authx_oauth2_config_invalid"
 	// CodeSecurityConfigInvalid 安全策略配置非法。
 	CodeSecurityConfigInvalid errx.Code = "authx_security_config_invalid"
+	// CodeStoreFull 存储容量已满，拒绝继续写入（防内存无限增长）。
+	CodeStoreFull errx.Code = "authx_store_full"
+	// CodeRBACLimit RBAC 规模超出上限（角色数量或继承深度）。
+	CodeRBACLimit errx.Code = "authx_rbac_limit"
 )
 
 // 预定义错误值，可用 errx.Is 判断。
@@ -109,4 +113,8 @@ var (
 	ErrOAuth2ConfigInvalid = errx.New(errx.KindInvalid, CodeOAuth2ConfigInvalid, "OAuth2 配置非法")
 	// ErrSecurityConfigInvalid 安全策略配置非法。
 	ErrSecurityConfigInvalid = errx.New(errx.KindInvalid, CodeSecurityConfigInvalid, "安全策略配置非法")
+	// ErrStoreFull 存储容量已满。
+	ErrStoreFull = errx.New(errx.KindUnavailable, CodeStoreFull, "存储容量已满")
+	// ErrRBACLimit RBAC 规模超出上限。
+	ErrRBACLimit = errx.New(errx.KindInvalid, CodeRBACLimit, "RBAC 规模超出上限")
 )

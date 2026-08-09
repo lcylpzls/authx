@@ -94,14 +94,18 @@ func TestCreateConflict(t *testing.T) {
 	}
 }
 
-// TestNewSessionIDFallback 覆盖随机源故障回退。
-func TestNewSessionIDFallback(t *testing.T) {
+// TestNewSessionIDError 覆盖随机源故障返回错误（不回退弱标识）。
+func TestNewSessionIDError(t *testing.T) {
 	orig := randRead
 	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
 	defer func() { randRead = orig }()
-	id := newSessionID()
-	if len(id) == 0 {
-		t.Fatal("回退 ID 不应为空")
+	if _, err := newSessionID(); err == nil {
+		t.Fatal("随机源故障应返回错误")
+	}
+	store := NewMemoryStore(nil)
+	if _, err := store.Create(context.Background(), time.Minute); err == nil ||
+		!errx.Is(err, authx.CodeSessionStoreInvalid) {
+		t.Fatalf("随机源故障时创建应报存储错误，实际：%v", err)
 	}
 }
 
@@ -115,5 +119,60 @@ func TestDefaultClock(t *testing.T) {
 	}
 	if _, err := store.Get(ctx, sess.ID); err != nil {
 		t.Fatalf("默认时间源读取失败：%v", err)
+	}
+}
+
+// TestMemoryStoreWithLimit 覆盖容量上限：满时拒绝新增，允许更新已有。
+func TestMemoryStoreWithLimit(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStoreWithLimit(nil, 2)
+	if err := store.Save(ctx, Session{ID: "a"}, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(ctx, Session{ID: "b"}, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(ctx, Session{ID: "c"}, time.Hour); err == nil || !errx.Is(err, authx.CodeStoreFull) {
+		t.Fatalf("容量已满保存应报错，实际：%v", err)
+	}
+	if _, err := store.Create(ctx, time.Hour); err == nil || !errx.Is(err, authx.CodeStoreFull) {
+		t.Fatalf("容量已满创建应报错，实际：%v", err)
+	}
+	if err := store.Save(ctx, Session{ID: "a", Values: map[string]string{"k": "v"}}, time.Hour); err != nil {
+		t.Fatalf("更新已有会话不应受上限影响：%v", err)
+	}
+}
+
+// TestMemoryStoreLimitPanic 覆盖非法上限 panic。
+func TestMemoryStoreLimitPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("非正上限应 panic")
+		}
+	}()
+	NewMemoryStoreWithLimit(nil, 0)
+}
+
+// TestMemoryStoreStartCleanup 覆盖会话存储周期清理。
+func TestMemoryStoreStartCleanup(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(func() time.Time { return now })
+	sess, err := store.Create(ctx, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Hour)
+	h := store.StartCleanup(10 * time.Millisecond)
+	defer h.Stop()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if _, err := store.Get(ctx, sess.ID); err != nil {
+			break // 已清理。
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("周期清理未生效")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

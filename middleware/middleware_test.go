@@ -403,6 +403,68 @@ func TestCSRFProtectPanics(t *testing.T) {
 	}
 }
 
+// TestCSRFAllowedOrigins 覆盖 Origin/Referer 校验分支。
+func TestCSRFAllowedOrigins(t *testing.T) {
+	mw := CSRFProtect("csrf", "X-CSRF-Token",
+		WithCSRFAllowedOrigins("https://app.example.com"), WithCSRFSecure(false))
+	token, err := GenerateCSRFToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(origin, referer string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/ping", nil)
+		req.AddCookie(&http.Cookie{Name: "csrf", Value: token})
+		req.Header.Set("X-CSRF-Token", token)
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		if referer != "" {
+			req.Header.Set("Referer", referer)
+		}
+		w := httptest.NewRecorder()
+		c := webx.NewContext(w, req)
+		c.SetHandlers([]webx.HandlerFunc{mw})
+		c.Run()
+		return w
+	}
+	if w := run("https://app.example.com", ""); w.Code != http.StatusOK {
+		t.Fatalf("匹配 Origin 应放行：%d", w.Code)
+	}
+	if w := run("https://evil.example.com", ""); w.Code != http.StatusForbidden {
+		t.Fatalf("不匹配 Origin 应 403：%d", w.Code)
+	}
+	if w := run("", "https://app.example.com/path"); w.Code != http.StatusOK {
+		t.Fatalf("匹配 Referer 应放行：%d", w.Code)
+	}
+	if w := run("", "https://evil.example.com/path"); w.Code != http.StatusForbidden {
+		t.Fatalf("不匹配 Referer 应 403：%d", w.Code)
+	}
+	if w := run("", "://bad-url"); w.Code != http.StatusForbidden {
+		t.Fatalf("非法 Referer 应 403：%d", w.Code)
+	}
+	if w := run("", "no-scheme/path"); w.Code != http.StatusForbidden {
+		t.Fatalf("无协议 Referer 应 403：%d", w.Code)
+	}
+	if w := run("", strings.Repeat("x", maxOriginLength+1)); w.Code != http.StatusForbidden {
+		t.Fatalf("超长 Referer 应 403：%d", w.Code)
+	}
+	if w := run(strings.Repeat("x", maxOriginLength+1), ""); w.Code != http.StatusForbidden {
+		t.Fatalf("超长 Origin 应 403：%d", w.Code)
+	}
+	// 未配置允许列表时跳过来源校验。
+	mwPlain := CSRFProtect("csrf", "X-CSRF-Token", WithCSRFSecure(false))
+	req := httptest.NewRequest(http.MethodPost, "/ping", nil)
+	req.AddCookie(&http.Cookie{Name: "csrf", Value: token})
+	req.Header.Set("X-CSRF-Token", token)
+	w := httptest.NewRecorder()
+	c := webx.NewContext(w, req)
+	c.SetHandlers([]webx.HandlerFunc{mwPlain})
+	c.Run()
+	if w.Code != http.StatusOK {
+		t.Fatalf("未配置来源应跳过校验：%d", w.Code)
+	}
+}
+
 // TestCSRFClockOption 覆盖注入时钟与 nil 回退。
 func TestCSRFClockOption(t *testing.T) {
 	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)

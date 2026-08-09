@@ -2,6 +2,19 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+## [v0.16.0] - 2026-08-09
+
+### 新增
+
+- 会话 Cookie 纵深防御：
+  - `WithSessionSigningKey`：会话 Cookie 值 HMAC-SHA256 签名，
+    篡改或伪造的会话 ID 一律视为无会话并重建；
+  - 轮换会话后签名同步更新；Cookie 值长度上限 512；
+- CSRF 来源校验：
+  - `WithCSRFAllowedOrigins`：非安全方法校验 Origin 精确匹配，
+    无 Origin 时回退校验 Referer 的 scheme://host；
+  - Origin/Referer 长度上限 2048，未配置时保持跳过校验的旧行为。
+
 ## [v0.15.0] - 2026-08-09
 
 ### 新增

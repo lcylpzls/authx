@@ -2,8 +2,13 @@ package middleware
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/lcylpzls/authx"
@@ -15,6 +20,8 @@ import (
 const (
 	ctxKeySession       = "authx_session"
 	ctxKeySessionConfig = "authx_session_config"
+	minSessionSignKey   = 16  // 会话签名密钥最短长度
+	maxSessionCookieLen = 512 // 会话 Cookie 值长度上限
 )
 
 // sessionOptions 会话中间件配置。
@@ -27,6 +34,7 @@ type sessionOptions struct {
 	logger   logx.Logger
 	now      func() time.Time
 	err      ErrorHandler
+	signKey  []byte
 }
 
 // SessionOption 会话中间件配置项。
@@ -77,6 +85,17 @@ func WithSessionErrorHandler(handler ErrorHandler) SessionOption {
 	}
 }
 
+// WithSessionSigningKey 启用会话 Cookie 值 HMAC-SHA256 签名（防篡改/伪造会话 ID）。
+// 密钥至少 16 字节；多实例部署时各实例必须使用同一密钥。
+func WithSessionSigningKey(key []byte) SessionOption {
+	return func(o *sessionOptions) {
+		if len(key) < minSessionSignKey {
+			panic("authx: 会话签名密钥至少 16 字节")
+		}
+		o.signKey = append([]byte(nil), key...)
+	}
+}
+
 // Session 构造会话中间件：读取/创建会话，请求结束后自动保存。
 // 处理器内通过 SessionFrom 读取，修改 Values 后由中间件统一落库。
 func Session(store session.Store, cookieName string, opts ...SessionOption) webx.HandlerFunc {
@@ -102,10 +121,11 @@ func Session(store session.Store, cookieName string, opts ...SessionOption) webx
 		o.now = time.Now
 	}
 	cfg := &sessionConfig{store: store, cookieName: cookieName, ttl: o.ttl, secure: o.secure,
-		httpOnly: o.httpOnly, path: o.path, sameSite: o.sameSite, now: o.now, logger: o.logger}
+		httpOnly: o.httpOnly, path: o.path, sameSite: o.sameSite, now: o.now, logger: o.logger,
+		signKey: o.signKey}
 	return func(c *webx.Context) {
 		ctx := c.Request().Context()
-		sess, err := loadSession(ctx, store, c, cookieName)
+		sess, err := loadSession(ctx, store, c, cookieName, o.signKey)
 		if err != nil {
 			o.err(c, http.StatusInternalServerError, err)
 			return
@@ -119,7 +139,7 @@ func Session(store session.Store, cookieName string, opts ...SessionOption) webx
 			sess = created
 			c.SetCookie(&http.Cookie{
 				Name:     cookieName,
-				Value:    sess.ID,
+				Value:    signedSessionValue(sess.ID, o.signKey),
 				Path:     o.path,
 				Secure:   o.secure,
 				HttpOnly: o.httpOnly,
@@ -156,6 +176,7 @@ type sessionConfig struct {
 	sameSite   http.SameSite
 	now        func() time.Time
 	logger     logx.Logger
+	signKey    []byte
 }
 
 // RotateSession 轮换当前会话 ID（防会话固定攻击），并同步更新 Cookie 与上下文。
@@ -179,7 +200,7 @@ func RotateSession(c *webx.Context) error {
 	}
 	c.SetCookie(&http.Cookie{
 		Name:     cfg.cookieName,
-		Value:    rotated.ID,
+		Value:    signedSessionValue(rotated.ID, cfg.signKey),
 		Path:     cfg.path,
 		Secure:   cfg.secure,
 		HttpOnly: cfg.httpOnly,
@@ -201,12 +222,20 @@ func SessionFrom(c *webx.Context) (session.Session, bool) {
 }
 
 // loadSession 读取 Cookie 并加载会话；缺失或过期返回空会话（由调用方新建）。
-func loadSession(ctx context.Context, store session.Store, c *webx.Context, cookieName string) (session.Session, error) {
+func loadSession(ctx context.Context, store session.Store, c *webx.Context, cookieName string, signKey []byte) (session.Session, error) {
 	cookie, err := c.Cookie(cookieName)
-	if err != nil || cookie.Value == "" {
+	if err != nil || cookie.Value == "" || len(cookie.Value) > maxSessionCookieLen {
 		return session.Session{}, nil
 	}
-	sess, err := store.Get(ctx, cookie.Value)
+	id := cookie.Value
+	if len(signKey) > 0 {
+		valid, ok := verifySessionCookie(cookie.Value, signKey)
+		if !ok {
+			return session.Session{}, nil // 签名无效视为无会话（防伪造）。
+		}
+		id = valid
+	}
+	sess, err := store.Get(ctx, id)
 	if err == nil {
 		return sess, nil
 	}
@@ -214,4 +243,30 @@ func loadSession(ctx context.Context, store session.Store, c *webx.Context, cook
 		return session.Session{}, nil
 	}
 	return session.Session{}, err
+}
+
+// signedSessionValue 为会话 ID 附加 HMAC-SHA256 签名（无密钥时原样返回）。
+func signedSessionValue(id string, key []byte) string {
+	if len(key) == 0 {
+		return id
+	}
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte(id))
+	return id + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// verifySessionCookie 校验签名并返回会话 ID；格式非法或签名不匹配返回 false。
+func verifySessionCookie(value string, key []byte) (string, bool) {
+	idx := strings.LastIndex(value, ".")
+	if idx <= 0 || idx == len(value)-1 {
+		return "", false
+	}
+	id, sig := value[:idx], value[idx+1:]
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte(id))
+	want := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	if subtle.ConstantTimeCompare([]byte(sig), []byte(want)) != 1 {
+		return "", false
+	}
+	return id, true
 }

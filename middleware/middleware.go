@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ const (
 	maxCSRFTokenLength = 256  // CSRF 令牌长度上限（防超长值 DoS）
 	csrfTokenBytes     = 32
 	defaultCSRFTTL     = 24 * time.Hour
+	maxOriginLength    = 2048 // Origin/Referer 长度上限
 )
 
 // randRead 可替换的随机源，便于测试注入失败场景。
@@ -190,6 +192,7 @@ type csrfOptions struct {
 	ttl      time.Duration
 	now      func() time.Time
 	err      ErrorHandler
+	origins  []string
 }
 
 // CSRFOption 双提交 CSRF 中间件配置项。
@@ -232,6 +235,21 @@ func WithCSRFErrorHandler(handler ErrorHandler) CSRFOption {
 			panic("authx: CSRF 错误处理器不能为空")
 		}
 		o.err = handler
+	}
+}
+
+// WithCSRFAllowedOrigins 设置允许的跨站来源（Origin 精确匹配；
+// 请求无 Origin 头时回退校验 Referer 的 scheme://host）。
+func WithCSRFAllowedOrigins(origins ...string) CSRFOption {
+	return func(o *csrfOptions) {
+		cleaned := make([]string, 0, len(origins))
+		for _, x := range origins {
+			x = strings.TrimRight(x, "/")
+			if x != "" {
+				cleaned = append(cleaned, x)
+			}
+		}
+		o.origins = cleaned
 	}
 }
 
@@ -303,6 +321,10 @@ func CSRFProtect(cookieName, headerName string, opts ...CSRFOption) webx.Handler
 			c.Next()
 			return
 		}
+		if !o.originAllowed(c) {
+			o.err(c, http.StatusForbidden, authx.ErrCSRFMismatch)
+			return
+		}
 		cookieValue := ""
 		if cookie, err := c.Cookie(cookieName); err == nil {
 			cookieValue = cookie.Value
@@ -313,6 +335,40 @@ func CSRFProtect(cookieName, headerName string, opts ...CSRFOption) webx.Handler
 		}
 		c.Next()
 	}
+}
+
+// originAllowed 校验非安全请求的来源；未配置允许列表时直接放行。
+func (o *csrfOptions) originAllowed(c *webx.Context) bool {
+	if len(o.origins) == 0 {
+		return true
+	}
+	if origin := c.GetHeader("Origin"); origin != "" {
+		if len(origin) > maxOriginLength {
+			return false
+		}
+		for _, allowed := range o.origins {
+			if origin == allowed {
+				return true
+			}
+		}
+		return false
+	}
+	if ref := c.GetHeader("Referer"); ref != "" {
+		if len(ref) > maxOriginLength {
+			return false
+		}
+		u, err := url.Parse(ref)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return false
+		}
+		base := u.Scheme + "://" + u.Host
+		for _, allowed := range o.origins {
+			if base == allowed {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ClaimsFrom 从上下文读取已认证用户的令牌载荷。

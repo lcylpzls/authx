@@ -342,3 +342,111 @@ func TestWithSessionErrorHandlerPanic(t *testing.T) {
 	}()
 	_ = Session(session.NewMemoryStore(nil), "sid", WithSessionErrorHandler(nil))
 }
+
+// TestSessionSigning 覆盖会话 Cookie 签名与防篡改。
+func TestSessionSigning(t *testing.T) {
+	store := session.NewMemoryStore(nil)
+	key := []byte("0123456789abcdef")
+	mw := Session(store, "sid", WithSessionSigningKey(key), WithSessionSecure(false))
+	// 首次请求：Cookie 值带签名。
+	w, _ := runChain(t, http.MethodGet, mw)
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || !strings.Contains(cookies[0].Value, ".") {
+		t.Fatalf("启用签名后 Cookie 应含签名：%+v", cookies)
+	}
+	signed := cookies[0].Value
+	id, ok := verifySessionCookie(signed, key)
+	if !ok || id == "" {
+		t.Fatalf("签名应可验：value=%q", signed)
+	}
+	// 带有效签名 Cookie 复用会话。
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	req.AddCookie(&http.Cookie{Name: "sid", Value: signed})
+	w2 := httptest.NewRecorder()
+	c2 := webx.NewContext(w2, req)
+	reused := false
+	c2.SetHandlers([]webx.HandlerFunc{mw, func(c *webx.Context) {
+		s, _ := SessionFrom(c)
+		reused = s.ID == id
+	}})
+	c2.Run()
+	if !reused {
+		t.Fatal("有效签名 Cookie 应复用会话")
+	}
+	// 篡改签名 → 视为无会话，新建并重新种 Cookie。
+	req3 := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	req3.AddCookie(&http.Cookie{Name: "sid", Value: id + ".tampered"})
+	w3 := httptest.NewRecorder()
+	c3 := webx.NewContext(w3, req3)
+	c3.SetHandlers([]webx.HandlerFunc{mw})
+	c3.Run()
+	if w3.Code != http.StatusOK {
+		t.Fatalf("篡改签名应重建会话：%d", w3.Code)
+	}
+	if _, err := store.Get(context.Background(), id); err != nil {
+		t.Fatal("原会话不应受影响")
+	}
+}
+
+// TestSessionSigningKeyPanic 覆盖过短签名密钥 panic。
+func TestSessionSigningKeyPanic(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("过短签名密钥应 panic")
+		}
+	}()
+	_ = Session(session.NewMemoryStore(nil), "sid", WithSessionSigningKey([]byte("short")))
+}
+
+// TestVerifySessionCookie 白盒覆盖签名校验分支。
+func TestVerifySessionCookie(t *testing.T) {
+	key := []byte("0123456789abcdef")
+	signed := signedSessionValue("s-1", key)
+	if id, ok := verifySessionCookie(signed, key); !ok || id != "s-1" {
+		t.Fatalf("有效签名应通过：%q %v", id, ok)
+	}
+	if _, ok := verifySessionCookie("no-dot", key); ok {
+		t.Fatal("无分隔符应拒绝")
+	}
+	if _, ok := verifySessionCookie("s-1.", key); ok {
+		t.Fatal("空签名应拒绝")
+	}
+	if _, ok := verifySessionCookie("s-1.wrong", key); ok {
+		t.Fatal("错误签名应拒绝")
+	}
+	if got := signedSessionValue("s-1", nil); got != "s-1" {
+		t.Fatalf("无密钥应原样返回：%q", got)
+	}
+}
+
+// TestRotateSessionSigned 覆盖轮换后 Cookie 签名更新。
+func TestRotateSessionSigned(t *testing.T) {
+	store := session.NewMemoryStore(nil)
+	key := []byte("0123456789abcdef")
+	mw := Session(store, "sid", WithSessionSigningKey(key), WithSessionSecure(false))
+	var newID string
+	w, _ := runChain(t, http.MethodGet, mw, func(c *webx.Context) {
+		if err := RotateSession(c); err != nil {
+			t.Fatal(err)
+		}
+		s, _ := SessionFrom(c)
+		newID = s.ID
+	})
+	cookies := w.Result().Cookies()
+	if len(cookies) != 2 {
+		t.Fatalf("应有两个 sid Cookie（初始+轮换）：%+v", cookies)
+	}
+	var rotated *http.Cookie
+	for _, ck := range cookies {
+		if ck.Name == "sid" {
+			rotated = ck
+		}
+	}
+	if rotated == nil {
+		t.Fatalf("缺少轮换 Cookie：%+v", cookies)
+	}
+	id, ok := verifySessionCookie(rotated.Value, key)
+	if !ok || id != newID {
+		t.Fatalf("轮换后签名应匹配新 ID：id=%q ok=%v new=%q", id, ok, newID)
+	}
+}

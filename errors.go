@@ -3,6 +3,42 @@ package authx
 
 import "github.com/lcylpzls/errx"
 
+func init() {
+	errx.RegisterCode(CodePasswordHashInvalid, "密码哈希格式无效或损坏")
+	errx.RegisterCode(CodePasswordMismatch, "明文与哈希不匹配")
+	errx.RegisterCode(CodePasswordTooLong, "明文密码超过长度上限")
+	errx.RegisterCode(CodePasswordTooShort, "明文密码低于长度下限")
+	errx.RegisterCode(CodePasswordConfigInvalid, "哈希参数非法")
+	errx.RegisterCode(CodePasswordInternal, "哈希/校验过程内部失败")
+	errx.RegisterCode(CodePasswordTooWeak, "密码强度不足")
+	errx.RegisterCode(CodeTokenInvalid, "令牌格式非法或载荷非法")
+	errx.RegisterCode(CodeTokenExpired, "令牌已过期")
+	errx.RegisterCode(CodeTokenSignature, "令牌签名无效")
+	errx.RegisterCode(CodeTokenRevoked, "令牌已撤销")
+	errx.RegisterCode(CodeTokenMissing, "缺少令牌")
+	errx.RegisterCode(CodeTokenConfigInvalid, "令牌配置非法")
+	errx.RegisterCode(CodeRefreshTokenInvalid, "刷新令牌无效")
+	errx.RegisterCode(CodeStoreInvalid, "存储读写失败")
+	errx.RegisterCode(CodeStoreFull, "存储容量已满")
+	errx.RegisterCode(CodeForbidden, "无权限")
+	errx.RegisterCode(CodeRBACRoleNotFound, "角色不存在")
+	errx.RegisterCode(CodeRBACRoleExists, "角色已存在")
+	errx.RegisterCode(CodeRBACCycle, "角色继承环")
+	errx.RegisterCode(CodeRBACInvalid, "RBAC 参数非法")
+	errx.RegisterCode(CodeRBACLimit, "角色/权限数量超限")
+	errx.RegisterCode(CodeCSRFMismatch, "CSRF 校验不匹配")
+	errx.RegisterCode(CodeCSRFGenerationFailed, "CSRF 令牌生成失败")
+	errx.RegisterCode(CodeSessionNotFound, "会话不存在")
+	errx.RegisterCode(CodeSessionInvalid, "会话无效")
+	errx.RegisterCode(CodeSessionStoreInvalid, "会话存储失败")
+	errx.RegisterCode(CodeMFAInvalid, "MFA 校验失败")
+	errx.RegisterCode(CodeMFAConfigInvalid, "MFA 配置非法")
+	errx.RegisterCode(CodeOAuth2Invalid, "OAuth2 参数非法")
+	errx.RegisterCode(CodeOAuth2ConfigInvalid, "OAuth2 配置非法")
+	errx.RegisterCode(CodeSecurityConfigInvalid, "安全配置非法")
+	errx.RegisterCode(CodeAuditQueueFull, "审计队列已满")
+}
+
 // 错误码统一以 authx_ 为前缀，语义与 HTTP 状态码对齐。
 const (
 	// CodePasswordHashInvalid 密码哈希格式无效或损坏。

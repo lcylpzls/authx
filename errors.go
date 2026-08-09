@@ -57,6 +57,8 @@ const (
 	CodeOAuth2Invalid errx.Code = "authx_oauth2_invalid"
 	// CodeOAuth2ConfigInvalid OAuth2 配置非法。
 	CodeOAuth2ConfigInvalid errx.Code = "authx_oauth2_config_invalid"
+	// CodeSecurityConfigInvalid 安全策略配置非法。
+	CodeSecurityConfigInvalid errx.Code = "authx_security_config_invalid"
 )
 
 // 预定义错误值，可用 errx.Is 判断。
@@ -105,4 +107,6 @@ var (
 	ErrOAuth2Invalid = errx.New(errx.KindUnauthorized, CodeOAuth2Invalid, "OAuth2 流程失败")
 	// ErrOAuth2ConfigInvalid OAuth2 配置非法。
 	ErrOAuth2ConfigInvalid = errx.New(errx.KindInvalid, CodeOAuth2ConfigInvalid, "OAuth2 配置非法")
+	// ErrSecurityConfigInvalid 安全策略配置非法。
+	ErrSecurityConfigInvalid = errx.New(errx.KindInvalid, CodeSecurityConfigInvalid, "安全策略配置非法")
 )

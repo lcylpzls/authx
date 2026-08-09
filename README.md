@@ -9,7 +9,25 @@
 - 会话：Session 存储接口 + 内存实现 + webx 会话中间件（自动落库）；
 - 多因素：TOTP（RFC 6238）与恢复码；
 - OAuth2：客户端（授权码 + PKCE）与服务端（授权码 + PKCE + 刷新令牌）；
-- 增强：审计与安全策略（规划中）。
+- 审计：结构化审计日志（logx 集成）+ 持久化钩子；
+- 安全：登录失败计数、账号锁定、滑动窗口清理。
+
+## 目录
+
+```
+authx/
+├── errors.go / config.go     # errx 错误码与全局配置
+├── password/                 # Argon2id 哈希、校验、参数迁移
+├── token/                    # JWT 全套算法、刷新令牌、撤销列表
+├── rbac/                     # 角色/权限模型、角色继承
+├── middleware/               # webx 认证/权限/CSRF/会话中间件
+├── session/                  # 会话模型与存储接口
+├── mfa/                      # TOTP 与恢复码
+├── oauth2/                   # OAuth2 客户端与授权服务端
+├── audit/                    # 结构化审计日志
+├── security/                 # 登录防爆破守卫
+└── examples/full/            # 全套组合示例
+```
 
 ## 安装
 
@@ -44,10 +62,11 @@ need, err := password.NeedsRehash(hash, authx.DefaultPasswordConfig())
 | v0.3.0 | rbac + middleware：webx 认证/权限/CSRF（已发布） |
 | v0.4.0 | session + mfa：会话与 TOTP（已发布） |
 | v0.5.0 | oauth2：客户端与授权码/PKCE 服务端（已发布） |
-| v0.6.0 | audit + security：审计、锁定、频控与 full 示例 |
+| v0.6.0 | audit + security：审计、锁定、频控与 full 示例（已发布，版本线完成） |
 
 ## 规范
 
 - 所有日志、打印、注释与文档使用简体中文；
 - 错误统一走 errx 语义（401/403 与业务错误码对齐）；
-- 每版本 100% 语句覆盖、race、fuzz、三平台 CI + Release。
+- 核心包每版本 100% 语句覆盖、race、fuzz、三平台 CI + Release；
+- examples 为可执行演示（`go test ./examples/full` 验证）。

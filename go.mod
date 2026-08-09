@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/go-oauth2/oauth2/v4 v4.5.4
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/lcylpzls/errx v1.2.0
+	github.com/lcylpzls/errx v1.3.1
 	github.com/lcylpzls/logx v1.0.0
 	github.com/lcylpzls/webx v1.2.2
 	golang.org/x/crypto v0.54.0

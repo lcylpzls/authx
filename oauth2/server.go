@@ -39,7 +39,7 @@ func WithClientBasicAuth() ServerOption {
 func WithClientStore(stor gooauth2.ClientStore) ServerOption {
 	return func(s *Server) error {
 		if stor == nil {
-			return errx.New(errx.KindInvalid, authx.CodeOAuth2ConfigInvalid, "客户端存储不能为空")
+			return errx.NewCode(authx.CodeOAuth2ConfigInvalid, "客户端存储不能为空")
 		}
 		s.manager.MapClientStorage(stor)
 		return nil
@@ -50,7 +50,7 @@ func WithClientStore(stor gooauth2.ClientStore) ServerOption {
 func WithTokenStore(stor gooauth2.TokenStore) ServerOption {
 	return func(s *Server) error {
 		if stor == nil {
-			return errx.New(errx.KindInvalid, authx.CodeOAuth2ConfigInvalid, "令牌存储不能为空")
+			return errx.NewCode(authx.CodeOAuth2ConfigInvalid, "令牌存储不能为空")
 		}
 		s.manager.MapTokenStorage(stor)
 		return nil
@@ -67,7 +67,7 @@ type Server struct {
 // NewServer 构造授权服务，内置内存客户端与令牌存储。
 func NewServer(cfg ServerConfig, opts ...ServerOption) (*Server, error) {
 	if cfg.ClientID == "" || cfg.RedirectURL == "" {
-		return nil, errx.New(errx.KindInvalid, authx.CodeOAuth2ConfigInvalid, "服务端配置不完整（ClientID/RedirectURL 必填）")
+		return nil, errx.NewCode(authx.CodeOAuth2ConfigInvalid, "服务端配置不完整（ClientID/RedirectURL 必填）")
 	}
 	manager := manage.NewDefaultManager()
 	manager.MustTokenStorage(store.NewMemoryTokenStore())

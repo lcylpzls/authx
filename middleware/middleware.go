@@ -257,7 +257,7 @@ func WithCSRFAllowedOrigins(origins ...string) CSRFOption {
 func GenerateCSRFToken() (string, error) {
 	b := make([]byte, csrfTokenBytes)
 	if _, err := randRead(b); err != nil {
-		return "", errx.Wrap(err, errx.KindUnavailable, authx.CodeCSRFGenerationFailed, "CSRF 令牌生成失败")
+		return "", errx.WrapCode(err, authx.CodeCSRFGenerationFailed, "CSRF 令牌生成失败")
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }

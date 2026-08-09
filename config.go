@@ -32,15 +32,15 @@ func DefaultPasswordConfig() PasswordConfig {
 func (c PasswordConfig) Validate() error {
 	switch {
 	case c.Memory < 8*1024:
-		return errx.New(errx.KindInvalid, CodePasswordConfigInvalid, "内存成本过低，至少 8MiB")
+		return errx.NewCode(CodePasswordConfigInvalid, "内存成本过低，至少 8MiB")
 	case c.Iterations == 0:
-		return errx.New(errx.KindInvalid, CodePasswordConfigInvalid, "时间成本不能为零")
+		return errx.NewCode(CodePasswordConfigInvalid, "时间成本不能为零")
 	case c.Parallelism == 0 || c.Parallelism > 4:
-		return errx.New(errx.KindInvalid, CodePasswordConfigInvalid, "并行度必须在 1-4 之间")
+		return errx.NewCode(CodePasswordConfigInvalid, "并行度必须在 1-4 之间")
 	case c.KeyLength < 16:
-		return errx.New(errx.KindInvalid, CodePasswordConfigInvalid, "密钥长度至少 16 字节")
+		return errx.NewCode(CodePasswordConfigInvalid, "密钥长度至少 16 字节")
 	case c.SaltLength < 8:
-		return errx.New(errx.KindInvalid, CodePasswordConfigInvalid, "盐长度至少 8 字节")
+		return errx.NewCode(CodePasswordConfigInvalid, "盐长度至少 8 字节")
 	default:
 		return nil
 	}

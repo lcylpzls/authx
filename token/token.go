@@ -51,7 +51,7 @@ type Option func(*Signer) error
 func WithTTL(ttl time.Duration) Option {
 	return func(s *Signer) error {
 		if ttl <= 0 {
-			return errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "令牌有效期必须为正")
+			return errx.NewCode(authx.CodeTokenConfigInvalid, "令牌有效期必须为正")
 		}
 		s.ttl = ttl
 		return nil
@@ -62,7 +62,7 @@ func WithTTL(ttl time.Duration) Option {
 func WithIssuer(issuer string) Option {
 	return func(s *Signer) error {
 		if issuer == "" {
-			return errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "签发方不能为空")
+			return errx.NewCode(authx.CodeTokenConfigInvalid, "签发方不能为空")
 		}
 		s.issuer = issuer
 		return nil
@@ -73,7 +73,7 @@ func WithIssuer(issuer string) Option {
 func WithAudience(audience ...string) Option {
 	return func(s *Signer) error {
 		if len(audience) == 0 {
-			return errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "受众不能为空")
+			return errx.NewCode(authx.CodeTokenConfigInvalid, "受众不能为空")
 		}
 		s.audience = append([]string(nil), audience...)
 		return nil
@@ -84,7 +84,7 @@ func WithAudience(audience ...string) Option {
 func WithRevocationStore(store RevocationStore) Option {
 	return func(s *Signer) error {
 		if store == nil {
-			return errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "撤销列表不能为空")
+			return errx.NewCode(authx.CodeTokenConfigInvalid, "撤销列表不能为空")
 		}
 		s.revoke = store
 		return nil
@@ -95,7 +95,7 @@ func WithRevocationStore(store RevocationStore) Option {
 func WithClock(now func() time.Time) Option {
 	return func(s *Signer) error {
 		if now == nil {
-			return errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "时间源不能为空")
+			return errx.NewCode(authx.CodeTokenConfigInvalid, "时间源不能为空")
 		}
 		s.now = now
 		return nil
@@ -106,7 +106,7 @@ func WithClock(now func() time.Time) Option {
 func WithLeeway(d time.Duration) Option {
 	return func(s *Signer) error {
 		if d < 0 {
-			return errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "时间容差不能为负")
+			return errx.NewCode(authx.CodeTokenConfigInvalid, "时间容差不能为负")
 		}
 		s.leeway = d
 		return nil
@@ -117,7 +117,7 @@ func WithLeeway(d time.Duration) Option {
 func WithKID(kid string) Option {
 	return func(s *Signer) error {
 		if kid == "" {
-			return errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "密钥标识不能为空")
+			return errx.NewCode(authx.CodeTokenConfigInvalid, "密钥标识不能为空")
 		}
 		s.kid = kid
 		return nil
@@ -129,7 +129,7 @@ func WithKID(kid string) Option {
 func WithVerificationKeys(keys map[string]any) Option {
 	return func(s *Signer) error {
 		if len(keys) == 0 {
-			return errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "验证密钥表不能为空")
+			return errx.NewCode(authx.CodeTokenConfigInvalid, "验证密钥表不能为空")
 		}
 		s.verifyKeys = make(map[string]any, len(keys))
 		for k, v := range keys {
@@ -142,7 +142,7 @@ func WithVerificationKeys(keys map[string]any) Option {
 // New 使用任意签名方法与密钥构造签发器。
 func New(method jwt.SigningMethod, key any, opts ...Option) (*Signer, error) {
 	if method == nil || key == nil {
-		return nil, errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "签名方法与密钥不能为空")
+		return nil, errx.NewCode(authx.CodeTokenConfigInvalid, "签名方法与密钥不能为空")
 	}
 	s := &Signer{
 		method:    method,
@@ -173,7 +173,7 @@ func New(method jwt.SigningMethod, key any, opts ...Option) (*Signer, error) {
 // NewHS256 使用 HMAC-SHA256 构造签发器（secret 至少 32 字节）。
 func NewHS256(secret []byte, opts ...Option) (*Signer, error) {
 	if len(secret) < 32 {
-		return nil, errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "HMAC 密钥至少 32 字节")
+		return nil, errx.NewCode(authx.CodeTokenConfigInvalid, "HMAC 密钥至少 32 字节")
 	}
 	return New(jwt.SigningMethodHS256, secret, opts...)
 }
@@ -181,7 +181,7 @@ func NewHS256(secret []byte, opts ...Option) (*Signer, error) {
 // NewRS256 使用 RSA-PKCS1v15-SHA256 构造签发器。
 func NewRS256(private *rsa.PrivateKey, opts ...Option) (*Signer, error) {
 	if private == nil {
-		return nil, errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "RSA 私钥不能为空")
+		return nil, errx.NewCode(authx.CodeTokenConfigInvalid, "RSA 私钥不能为空")
 	}
 	return New(jwt.SigningMethodRS256, private, opts...)
 }
@@ -189,7 +189,7 @@ func NewRS256(private *rsa.PrivateKey, opts ...Option) (*Signer, error) {
 // NewES256 使用 ECDSA-P256-SHA256 构造签发器。
 func NewES256(private *ecdsa.PrivateKey, opts ...Option) (*Signer, error) {
 	if private == nil {
-		return nil, errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "ECDSA 私钥不能为空")
+		return nil, errx.NewCode(authx.CodeTokenConfigInvalid, "ECDSA 私钥不能为空")
 	}
 	return New(jwt.SigningMethodES256, private, opts...)
 }
@@ -197,7 +197,7 @@ func NewES256(private *ecdsa.PrivateKey, opts ...Option) (*Signer, error) {
 // NewEdDSA 使用 Ed25519 构造签发器。
 func NewEdDSA(private ed25519.PrivateKey, opts ...Option) (*Signer, error) {
 	if len(private) != ed25519.PrivateKeySize {
-		return nil, errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "Ed25519 私钥长度非法")
+		return nil, errx.NewCode(authx.CodeTokenConfigInvalid, "Ed25519 私钥长度非法")
 	}
 	return New(jwt.SigningMethodEdDSA, private, opts...)
 }
@@ -281,18 +281,18 @@ func (s *Signer) Parse(raw string) (Claims, error) {
 	// 失败路径统一由 classifyParseError 映射为 authx 语义。
 	if _, err := jwt.ParseWithClaims(raw, &claims, func(t *jwt.Token) (any, error) {
 		if t.Method.Alg() != s.method.Alg() {
-			return nil, errx.New(errx.KindUnauthorized, authx.CodeTokenSignature, "签名算法不匹配")
+			return nil, errx.NewCode(authx.CodeTokenSignature, "签名算法不匹配")
 		}
 		if s.verifyKeys != nil {
 			kid, _ := t.Header["kid"].(string)
 			key, ok := s.verifyKeys[kid]
 			if !ok {
-				return nil, errx.New(errx.KindUnauthorized, authx.CodeTokenSignature, "密钥标识不存在")
+				return nil, errx.NewCode(authx.CodeTokenSignature, "密钥标识不存在")
 			}
 			return key, nil
 		}
 		if kid, _ := t.Header["kid"].(string); kid != "" && s.kid != "" && kid != s.kid {
-			return nil, errx.New(errx.KindUnauthorized, authx.CodeTokenSignature, "密钥标识不匹配")
+			return nil, errx.NewCode(authx.CodeTokenSignature, "密钥标识不匹配")
 		}
 		return s.verifyKey, nil
 	}, opts...); err != nil {
@@ -301,7 +301,7 @@ func (s *Signer) Parse(raw string) (Claims, error) {
 	if s.revoke != nil && claims.ID != "" {
 		revoked, rerr := s.revoke.IsRevoked(context.Background(), claims.ID)
 		if rerr != nil {
-			return Claims{}, errx.Wrap(rerr, errx.KindUnavailable, authx.CodeStoreInvalid, "撤销状态查询失败")
+			return Claims{}, errx.WrapCode(rerr, authx.CodeStoreInvalid, "撤销状态查询失败")
 		}
 		if revoked {
 			return Claims{}, authx.ErrTokenRevoked
@@ -321,7 +321,7 @@ func classifyParseError(err error) error {
 	case errors.Is(err, jwt.ErrTokenSignatureInvalid), errors.Is(err, jwt.ErrTokenMalformed):
 		return authx.ErrTokenSignature
 	default:
-		return errx.Wrap(err, errx.KindUnauthorized, authx.CodeTokenInvalid, "令牌校验失败")
+		return errx.WrapCode(err, authx.CodeTokenInvalid, "令牌校验失败")
 	}
 }
 

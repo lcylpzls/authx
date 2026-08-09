@@ -30,7 +30,7 @@ type Option func(*LoginGuard) error
 func WithFailureWindow(d time.Duration) Option {
 	return func(g *LoginGuard) error {
 		if d <= 0 {
-			return errx.New(errx.KindInvalid, authx.CodeSecurityConfigInvalid, "失败窗口必须为正")
+			return errx.NewCode(authx.CodeSecurityConfigInvalid, "失败窗口必须为正")
 		}
 		g.window = d
 		return nil
@@ -41,7 +41,7 @@ func WithFailureWindow(d time.Duration) Option {
 func WithClock(now func() time.Time) Option {
 	return func(g *LoginGuard) error {
 		if now == nil {
-			return errx.New(errx.KindInvalid, authx.CodeSecurityConfigInvalid, "时间源不能为空")
+			return errx.NewCode(authx.CodeSecurityConfigInvalid, "时间源不能为空")
 		}
 		g.now = now
 		return nil
@@ -52,7 +52,7 @@ func WithClock(now func() time.Time) Option {
 func WithMaxEntries(maxEntries int) Option {
 	return func(g *LoginGuard) error {
 		if maxEntries <= 0 {
-			return errx.New(errx.KindInvalid, authx.CodeSecurityConfigInvalid, "条目上限必须为正")
+			return errx.NewCode(authx.CodeSecurityConfigInvalid, "条目上限必须为正")
 		}
 		g.maxEntries = maxEntries
 		return nil
@@ -62,7 +62,7 @@ func WithMaxEntries(maxEntries int) Option {
 // NewLoginGuard 构造登录守卫。
 func NewLoginGuard(maxFailures int, lockDuration time.Duration, opts ...Option) (*LoginGuard, error) {
 	if maxFailures <= 0 || lockDuration <= 0 {
-		return nil, errx.New(errx.KindInvalid, authx.CodeSecurityConfigInvalid, "最大失败次数与锁定时长必须为正")
+		return nil, errx.NewCode(authx.CodeSecurityConfigInvalid, "最大失败次数与锁定时长必须为正")
 	}
 	g := &LoginGuard{
 		maxFailures:  maxFailures,

@@ -83,7 +83,7 @@ func (s *MemoryStore) Create(ctx context.Context, ttl time.Duration) (Session, e
 	for attempt := 0; attempt < createRetry; attempt++ {
 		id, err := newSessionID()
 		if err != nil {
-			return Session{}, errx.Wrap(err, errx.KindUnavailable, authx.CodeSessionStoreInvalid, "会话 ID 生成失败")
+			return Session{}, errx.WrapCode(err, authx.CodeSessionStoreInvalid, "会话 ID 生成失败")
 		}
 		if _, ok := s.items[id]; ok {
 			continue // ID 冲突，重试。
@@ -95,7 +95,7 @@ func (s *MemoryStore) Create(ctx context.Context, ttl time.Duration) (Session, e
 		s.saveLocked(sess, ttl)
 		return sess, nil
 	}
-	return Session{}, errx.Wrap(authx.ErrSessionStoreInvalid, errx.KindUnavailable,
+	return Session{}, errx.WrapCode(authx.ErrSessionStoreInvalid,
 		authx.CodeSessionStoreInvalid, "会话 ID 冲突且重试耗尽")
 }
 
@@ -168,7 +168,7 @@ func (s *MemoryStore) Rotate(ctx context.Context, id string, ttl time.Duration) 
 	for attempt := 0; attempt < createRetry; attempt++ {
 		nid, err := newSessionID()
 		if err != nil {
-			return Session{}, errx.Wrap(err, errx.KindUnavailable, authx.CodeSessionStoreInvalid, "会话 ID 生成失败")
+			return Session{}, errx.WrapCode(err, authx.CodeSessionStoreInvalid, "会话 ID 生成失败")
 		}
 		if _, exists := s.items[nid]; exists {
 			continue // ID 冲突，重试。
@@ -181,7 +181,7 @@ func (s *MemoryStore) Rotate(ctx context.Context, id string, ttl time.Duration) 
 		delete(s.items, id)
 		return rotated, nil
 	}
-	return Session{}, errx.Wrap(authx.ErrSessionStoreInvalid, errx.KindUnavailable,
+	return Session{}, errx.WrapCode(authx.ErrSessionStoreInvalid,
 		authx.CodeSessionStoreInvalid, "会话 ID 冲突且重试耗尽")
 }
 

@@ -44,16 +44,16 @@ type StrengthConfig struct {
 // Validate 校验强度策略本身是否合法。
 func (c StrengthConfig) Validate() error {
 	if c.MinLength < 0 || c.MaxLength < 0 {
-		return errx.New(errx.KindInvalid, authx.CodePasswordConfigInvalid, "强度策略长度不能为负")
+		return errx.NewCode(authx.CodePasswordConfigInvalid, "强度策略长度不能为负")
 	}
 	if c.MinLength > 0 && c.MinLength < minPlainLength {
-		return errx.New(errx.KindInvalid, authx.CodePasswordConfigInvalid, "强度策略最小长度不能低于默认下限")
+		return errx.NewCode(authx.CodePasswordConfigInvalid, "强度策略最小长度不能低于默认下限")
 	}
 	if c.MaxLength > 0 && c.MaxLength < minPlainLength {
-		return errx.New(errx.KindInvalid, authx.CodePasswordConfigInvalid, "强度策略最大长度不能低于默认下限")
+		return errx.NewCode(authx.CodePasswordConfigInvalid, "强度策略最大长度不能低于默认下限")
 	}
 	if c.MinLength > 0 && c.MaxLength > 0 && c.MinLength > c.MaxLength {
-		return errx.New(errx.KindInvalid, authx.CodePasswordConfigInvalid, "强度策略最小长度不能大于最大长度")
+		return errx.NewCode(authx.CodePasswordConfigInvalid, "强度策略最小长度不能大于最大长度")
 	}
 	return nil
 }
@@ -126,7 +126,7 @@ func hashWithStrength(plain string, cfg authx.PasswordConfig, strength StrengthC
 	}
 	salt := make([]byte, cfg.SaltLength)
 	if _, err := randRead(salt); err != nil {
-		return "", errx.Wrap(err, errx.KindUnavailable, authx.CodePasswordInternal, "随机盐生成失败")
+		return "", errx.WrapCode(err, authx.CodePasswordInternal, "随机盐生成失败")
 	}
 	key := argon2.IDKey([]byte(plain), salt, cfg.Iterations, cfg.Memory, cfg.Parallelism, cfg.KeyLength)
 	enc := base64.RawStdEncoding
@@ -242,5 +242,5 @@ func parseParams(s string) (params, error) {
 
 // wrapHashInvalid 构造哈希格式错误（保留原错误链）。
 func wrapHashInvalid(msg string) error {
-	return errx.New(errx.KindInvalid, authx.CodePasswordHashInvalid, msg)
+	return errx.NewCode(authx.CodePasswordHashInvalid, msg)
 }

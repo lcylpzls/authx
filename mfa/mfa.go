@@ -330,7 +330,7 @@ func (s *MemoryRecoveryCodeStore) StartCleanup(interval time.Duration) *authx.Cl
 // 存储失败时返回错误；已存储的条目不会回滚（调用方可删除或重新签发）。
 func IssueRecoveryCodes(ctx context.Context, store RecoveryCodeStore, count int, ttl time.Duration) ([]string, error) {
 	if store == nil {
-		return nil, errx.New(errx.KindInvalid, authx.CodeMFAConfigInvalid, "恢复码存储不能为空")
+		return nil, errx.NewCode(authx.CodeMFAConfigInvalid, "恢复码存储不能为空")
 	}
 	codes, err := GenerateRecoveryCodes(count)
 	if err != nil {

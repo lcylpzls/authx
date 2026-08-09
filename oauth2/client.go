@@ -43,7 +43,7 @@ type Client struct {
 // NewClient 构造 OAuth2 客户端。
 func NewClient(cfg ProviderConfig) (*Client, error) {
 	if cfg.ClientID == "" || cfg.AuthURL == "" || cfg.TokenURL == "" || cfg.RedirectURL == "" {
-		return nil, errx.New(errx.KindInvalid, authx.CodeOAuth2ConfigInvalid, "客户端配置不完整（ClientID/AuthURL/TokenURL/RedirectURL 必填）")
+		return nil, errx.NewCode(authx.CodeOAuth2ConfigInvalid, "客户端配置不完整（ClientID/AuthURL/TokenURL/RedirectURL 必填）")
 	}
 	return &Client{
 		config: &xoauth2.Config{
@@ -81,7 +81,7 @@ func (c *Client) Exchange(ctx context.Context, code, verifier string) (*xoauth2.
 	}
 	tok, err := c.config.Exchange(ctx, code, opts...)
 	if err != nil {
-		return nil, errx.Wrap(err, errx.KindUnauthorized, authx.CodeOAuth2Invalid, "OAuth2 令牌交换失败")
+		return nil, errx.WrapCode(err, authx.CodeOAuth2Invalid, "OAuth2 令牌交换失败")
 	}
 	return tok, nil
 }
@@ -89,11 +89,11 @@ func (c *Client) Exchange(ctx context.Context, code, verifier string) (*xoauth2.
 // RefreshToken 使用刷新令牌换取新令牌（自动处理过期与重试）。
 func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (*xoauth2.Token, error) {
 	if refreshToken == "" {
-		return nil, errx.New(errx.KindInvalid, authx.CodeOAuth2ConfigInvalid, "刷新令牌不能为空")
+		return nil, errx.NewCode(authx.CodeOAuth2ConfigInvalid, "刷新令牌不能为空")
 	}
 	tok, err := c.config.TokenSource(ctx, &xoauth2.Token{RefreshToken: refreshToken}).Token()
 	if err != nil {
-		return nil, errx.Wrap(err, errx.KindUnauthorized, authx.CodeOAuth2Invalid, "OAuth2 刷新令牌失败")
+		return nil, errx.WrapCode(err, authx.CodeOAuth2Invalid, "OAuth2 刷新令牌失败")
 	}
 	return tok, nil
 }
@@ -101,7 +101,7 @@ func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (*xoauth
 // UserInfo 拉取用户信息（需要配置 UserInfoURL）。
 func (c *Client) UserInfo(ctx context.Context, tok *xoauth2.Token) (map[string]any, error) {
 	if c.userInfoURL == "" {
-		return nil, errx.New(errx.KindInvalid, authx.CodeOAuth2ConfigInvalid, "未配置用户信息端点")
+		return nil, errx.NewCode(authx.CodeOAuth2ConfigInvalid, "未配置用户信息端点")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.userInfoURL, nil)
 	if err != nil {

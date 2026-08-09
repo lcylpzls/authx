@@ -21,6 +21,16 @@ func mockProvider(t *testing.T) (string, *httptest.Server) {
 		case "/authorize":
 			http.Redirect(w, r, "/cb?code=mock-code", http.StatusFound)
 		case "/token":
+			if r.FormValue("grant_type") == "refresh_token" {
+				if r.FormValue("refresh_token") != "rt-1" {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"access_token":"at-2","token_type":"Bearer","expires_in":3600,"refresh_token":"rt-2"}`))
+				return
+			}
 			if r.FormValue("code") != "good-code" {
 				w.WriteHeader(http.StatusBadRequest)
 				_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
@@ -45,6 +55,13 @@ func mockProvider(t *testing.T) (string, *httptest.Server) {
 			_, _ = w.Write([]byte(`not-json`))
 		case "/error":
 			w.WriteHeader(http.StatusInternalServerError)
+		case "/huge":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"sub":"` + strings.Repeat("x", maxUserInfoBytes) + `"}`))
+		case "/truncated":
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Length", "100")
+			_, _ = w.Write([]byte(`{"sub":"short"}`))
 		}
 	}))
 	return srv.URL, srv
@@ -122,6 +139,25 @@ func TestExchange(t *testing.T) {
 	}
 }
 
+// TestRefreshToken 覆盖客户端刷新令牌流程。
+func TestRefreshToken(t *testing.T) {
+	base, srv := mockProvider(t)
+	defer srv.Close()
+	c := testClient(t, base, false)
+	tok, err := c.RefreshToken(context.Background(), "rt-1")
+	if err != nil || tok.AccessToken != "at-2" {
+		t.Fatalf("刷新失败：tok=%v err=%v", tok, err)
+	}
+	if _, err := c.RefreshToken(context.Background(), ""); err == nil ||
+		!errx.Is(err, authx.CodeOAuth2ConfigInvalid) {
+		t.Fatalf("空刷新令牌应报配置错误，实际：%v", err)
+	}
+	if _, err := c.RefreshToken(context.Background(), "rt-bad"); err == nil ||
+		!errx.Is(err, authx.CodeOAuth2Invalid) {
+		t.Fatalf("无效刷新令牌应报错，实际：%v", err)
+	}
+}
+
 // TestUserInfo 覆盖用户信息拉取。
 func TestUserInfo(t *testing.T) {
 	base, srv := mockProvider(t)
@@ -163,6 +199,20 @@ func TestUserInfo(t *testing.T) {
 	if _, err := c4.UserInfo(context.Background(), &xoauth2.Token{AccessToken: "at-1"}); err == nil ||
 		!errx.Is(err, authx.CodeOAuth2Invalid) {
 		t.Fatalf("连接失败应报错，实际：%v", err)
+	}
+	// 响应体超限。
+	c5 := testClient(t, base, true)
+	c5.userInfoURL = base + "/huge"
+	if _, err := c5.UserInfo(context.Background(), &xoauth2.Token{AccessToken: "at-1"}); err == nil ||
+		!errx.Is(err, authx.CodeOAuth2Invalid) {
+		t.Fatalf("超大响应应报错，实际：%v", err)
+	}
+	// 响应读取失败（Content-Length 与实际不符）。
+	c6 := testClient(t, base, true)
+	c6.userInfoURL = base + "/truncated"
+	if _, err := c6.UserInfo(context.Background(), &xoauth2.Token{AccessToken: "at-1"}); err == nil ||
+		!errx.Is(err, authx.CodeOAuth2Invalid) {
+		t.Fatalf("读取失败应报错，实际：%v", err)
 	}
 }
 

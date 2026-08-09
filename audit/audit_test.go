@@ -62,3 +62,39 @@ func TestRecord(t *testing.T) {
 		t.Fatalf("显式值被覆盖：%+v", e2)
 	}
 }
+
+// TestRecordTruncate 覆盖超长字段截断与非法结果归一。
+func TestRecordTruncate(t *testing.T) {
+	var buf bytes.Buffer
+	logger, err := logx.NewBuilder().EnableWriter(&buf, logx.InfoLevel).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(logger)
+	got := make(chan Event, 1)
+	a.AddHook(func(e Event) { got <- e })
+	long := strings.Repeat("x", maxFieldLength+100)
+	a.Record(Event{Action: "login", Subject: long, Result: "weird"})
+	e := <-got
+	if len(e.Subject) != maxFieldLength {
+		t.Fatalf("超长字段应截断到上限：%d", len(e.Subject))
+	}
+	if e.Result != ResultSuccess {
+		t.Fatalf("非法结果应归一为 success：%q", e.Result)
+	}
+}
+
+// TestHookPanicRecover 覆盖钩子 panic 恢复。
+func TestHookPanicRecover(t *testing.T) {
+	var buf bytes.Buffer
+	logger, err := logx.NewBuilder().EnableWriter(&buf, logx.InfoLevel).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(logger)
+	a.AddHook(func(Event) { panic("钩子故障") })
+	a.Record(Event{Action: "login"}) // 不应 panic。
+	if !strings.Contains(buf.String(), "审计钩子异常") {
+		t.Fatalf("应记录钩子异常日志：%s", buf.String())
+	}
+}

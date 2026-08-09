@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -54,6 +55,14 @@ func TestNewServerErrors(t *testing.T) {
 	if _, err := NewServer(ServerConfig{ClientID: testClientID}); err == nil ||
 		!errx.Is(err, authx.CodeOAuth2ConfigInvalid) {
 		t.Fatalf("空 RedirectURL 应报错，实际：%v", err)
+	}
+	if _, err := NewServer(ServerConfig{ClientID: testClientID, RedirectURL: testRedirect},
+		WithClientBasicAuth()); err != nil {
+		t.Fatalf("Basic Auth 选项应可用：%v", err)
+	}
+	if _, err := NewServer(ServerConfig{ClientID: testClientID, RedirectURL: testRedirect},
+		func(*Server) error { return errors.New("选项失败") }); err == nil {
+		t.Fatal("返回错误的选项应导致构造失败")
 	}
 }
 

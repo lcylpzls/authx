@@ -22,6 +22,18 @@ type ServerConfig struct {
 	RedirectURL string
 }
 
+// ServerOption 授权服务配置项。
+type ServerOption func(*Server) error
+
+// WithClientBasicAuth 启用 token 端点的客户端 Basic 认证（RFC 6749 推荐）。
+// 默认使用表单认证（ClientFormHandler）。
+func WithClientBasicAuth() ServerOption {
+	return func(s *Server) error {
+		s.inner.SetClientInfoHandler(oauth2server.ClientBasicHandler)
+		return nil
+	}
+}
+
 // Server OAuth2 授权服务（授权码 + PKCE + 刷新令牌）。
 type Server struct {
 	inner       *oauth2server.Server
@@ -29,7 +41,7 @@ type Server struct {
 }
 
 // NewServer 构造授权服务，内置内存客户端与令牌存储。
-func NewServer(cfg ServerConfig) (*Server, error) {
+func NewServer(cfg ServerConfig, opts ...ServerOption) (*Server, error) {
 	if cfg.ClientID == "" || cfg.RedirectURL == "" {
 		return nil, errx.New(errx.KindInvalid, authx.CodeOAuth2ConfigInvalid, "服务端配置不完整（ClientID/RedirectURL 必填）")
 	}
@@ -46,7 +58,13 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	srv := oauth2server.NewDefaultServer(manager)
 	srv.SetAllowGetAccessRequest(true)
 	srv.SetClientInfoHandler(oauth2server.ClientFormHandler)
-	return &Server{inner: srv}, nil
+	s := &Server{inner: srv}
+	for _, opt := range opts {
+		if err := opt(s); err != nil {
+			return nil, err
+		}
+	}
+	return s, nil
 }
 
 // SetUserAuthorizationHandler 设置当前登录用户解析器：

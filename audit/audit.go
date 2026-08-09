@@ -2,6 +2,7 @@
 package audit
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -10,8 +11,9 @@ import (
 
 // 审计结果常量。
 const (
-	ResultSuccess = "success"
-	ResultFailure = "failure"
+	ResultSuccess  = "success"
+	ResultFailure  = "failure"
+	maxFieldLength = 4096 // 审计字段长度上限（防日志炸弹）
 )
 
 // Event 单条审计事件。
@@ -62,9 +64,18 @@ func (a *Auditor) Record(e Event) {
 	if e.Time.IsZero() {
 		e.Time = time.Now()
 	}
-	if e.Result == "" {
+	switch e.Result {
+	case "", ResultSuccess:
 		e.Result = ResultSuccess
+	case ResultFailure:
+	default:
+		e.Result = ResultSuccess // 非法结果统一归为成功，避免注入任意值。
 	}
+	e.Action = truncate(e.Action)
+	e.Subject = truncate(e.Subject)
+	e.Object = truncate(e.Object)
+	e.Detail = truncate(e.Detail)
+	e.IP = truncate(e.IP)
 	a.logger.Info("审计事件", logx.Fields(
 		logx.String("audit_action", e.Action),
 		logx.String("audit_subject", e.Subject),
@@ -78,6 +89,25 @@ func (a *Auditor) Record(e Event) {
 	hooks := append([]func(Event){}, a.hooks...)
 	a.mu.RUnlock()
 	for _, hook := range hooks {
-		hook(e)
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// 单个钩子故障不得拖垮业务主链路。
+					a.logger.Error("审计钩子异常", logx.Fields(
+						logx.String("audit_action", e.Action),
+						logx.String("audit_panic", fmt.Sprint(r)),
+					))
+				}
+			}()
+			hook(e)
+		}()
 	}
+}
+
+// truncate 截断超长字段，防止审计日志被异常数据撑爆。
+func truncate(s string) string {
+	if len(s) > maxFieldLength {
+		return s[:maxFieldLength]
+	}
+	return s
 }

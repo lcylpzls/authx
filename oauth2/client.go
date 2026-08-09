@@ -4,6 +4,7 @@ package oauth2
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 
@@ -11,6 +12,8 @@ import (
 	"github.com/lcylpzls/errx"
 	xoauth2 "golang.org/x/oauth2"
 )
+
+const maxUserInfoBytes = 1 << 20 // 用户信息响应体上限（1 MiB，防恶意大响应）
 
 // ProviderConfig 第三方登录提供方配置。
 type ProviderConfig struct {
@@ -83,6 +86,18 @@ func (c *Client) Exchange(ctx context.Context, code, verifier string) (*xoauth2.
 	return tok, nil
 }
 
+// RefreshToken 使用刷新令牌换取新令牌（自动处理过期与重试）。
+func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (*xoauth2.Token, error) {
+	if refreshToken == "" {
+		return nil, errx.New(errx.KindInvalid, authx.CodeOAuth2ConfigInvalid, "刷新令牌不能为空")
+	}
+	tok, err := c.config.TokenSource(ctx, &xoauth2.Token{RefreshToken: refreshToken}).Token()
+	if err != nil {
+		return nil, errx.Wrap(err, errx.KindUnauthorized, authx.CodeOAuth2Invalid, "OAuth2 刷新令牌失败")
+	}
+	return tok, nil
+}
+
 // UserInfo 拉取用户信息（需要配置 UserInfoURL）。
 func (c *Client) UserInfo(ctx context.Context, tok *xoauth2.Token) (map[string]any, error) {
 	if c.userInfoURL == "" {
@@ -101,8 +116,15 @@ func (c *Client) UserInfo(ctx context.Context, tok *xoauth2.Token) (map[string]a
 	if resp.StatusCode != http.StatusOK {
 		return nil, errx.New(errx.KindUnavailable, authx.CodeOAuth2Invalid, "用户信息端点返回非 200")
 	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxUserInfoBytes+1))
+	if err != nil {
+		return nil, errx.Wrap(err, errx.KindUnavailable, authx.CodeOAuth2Invalid, "用户信息读取失败")
+	}
+	if len(body) > maxUserInfoBytes {
+		return nil, errx.New(errx.KindInvalid, authx.CodeOAuth2Invalid, "用户信息响应体过大")
+	}
 	var info map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := json.Unmarshal(body, &info); err != nil {
 		return nil, errx.Wrap(err, errx.KindInvalid, authx.CodeOAuth2Invalid, "用户信息解析失败")
 	}
 	return info, nil

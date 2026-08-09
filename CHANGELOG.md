@@ -2,6 +2,22 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+## [v0.4.0] - 2026-08-09
+
+### 新增
+
+- session 包：会话模型与存储：
+  - `Session`（ID + 键值对）、`Store` 接口（Create/Get/Save/Delete）；
+  - `MemoryStore` 内存实现（TTL 过期清理、ID 冲突重试、深拷贝隔离）；
+- middleware 会话中间件：
+  - `Session`：读取/创建会话、种 Cookie（Secure/HttpOnly/SameSite 可配）、
+    请求结束自动保存，处理器内 `SessionFrom` 读取；
+- mfa 包：多因素认证：
+  - TOTP（RFC 6238，HMAC-SHA1、6 位、30s 周期、skew 窗口）；
+  - `GenerateSecret`/`GenerateCode`/`ValidateCode`/`ProvisioningURI`；
+  - 恢复码：生成（16 字节 base32 分组）、SHA-256 哈希存储、常量时间校验；
+- 新增错误码：会话（不存在/非法/存储不可用）、MFA（非法/配置非法）。
+
 ## [v0.3.0] - 2026-08-09
 
 ### 新增

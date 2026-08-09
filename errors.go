@@ -43,6 +43,16 @@ const (
 	CodeRBACInvalid errx.Code = "authx_rbac_invalid"
 	// CodeCSRFMismatch CSRF 校验不通过。
 	CodeCSRFMismatch errx.Code = "authx_csrf_mismatch"
+	// CodeSessionNotFound 会话不存在或已过期。
+	CodeSessionNotFound errx.Code = "authx_session_not_found"
+	// CodeSessionInvalid 会话参数非法（空 ID、TTL 非正等）。
+	CodeSessionInvalid errx.Code = "authx_session_invalid"
+	// CodeSessionStoreInvalid 会话存储不可用。
+	CodeSessionStoreInvalid errx.Code = "authx_session_store_invalid"
+	// CodeMFAInvalid 多因素参数非法（密钥无法解码、验证码格式错误等）。
+	CodeMFAInvalid errx.Code = "authx_mfa_invalid"
+	// CodeMFAConfigInvalid 多因素配置非法。
+	CodeMFAConfigInvalid errx.Code = "authx_mfa_config_invalid"
 )
 
 // 预定义错误值，可用 errx.Is 判断。
@@ -77,4 +87,14 @@ var (
 	ErrRBACInvalid = errx.New(errx.KindInvalid, CodeRBACInvalid, "角色或权限参数非法")
 	// ErrCSRFMismatch CSRF 校验不通过。
 	ErrCSRFMismatch = errx.New(errx.KindForbidden, CodeCSRFMismatch, "CSRF 校验失败")
+	// ErrSessionNotFound 会话不存在或已过期。
+	ErrSessionNotFound = errx.New(errx.KindUnauthorized, CodeSessionNotFound, "会话不存在或已过期")
+	// ErrSessionInvalid 会话参数非法。
+	ErrSessionInvalid = errx.New(errx.KindInvalid, CodeSessionInvalid, "会话参数非法")
+	// ErrSessionStoreInvalid 会话存储不可用。
+	ErrSessionStoreInvalid = errx.New(errx.KindUnavailable, CodeSessionStoreInvalid, "会话存储不可用")
+	// ErrMFAInvalid 多因素参数非法。
+	ErrMFAInvalid = errx.New(errx.KindInvalid, CodeMFAInvalid, "多因素参数非法")
+	// ErrMFAConfigInvalid 多因素配置非法。
+	ErrMFAConfigInvalid = errx.New(errx.KindInvalid, CodeMFAConfigInvalid, "多因素配置非法")
 )

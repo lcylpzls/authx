@@ -128,6 +128,7 @@ func (a *AsyncAuditor) Dropped() uint64 {
 }
 
 // Stop 停止后台处理并等待队列排空；重复调用安全。
+// 注意：若注册的钩子永久阻塞，Stop 会等待其返回。
 func (a *AsyncAuditor) Stop() {
 	if a.running.Swap(false) {
 		a.stopOnce.Do(func() { close(a.stopCh) })

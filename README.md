@@ -101,6 +101,7 @@ defer sessCleanup.Stop()
 | v0.16.0 | 会话与 CSRF 纵深防御：Cookie HMAC 签名、Origin/Referer 校验（已发布） |
 | v0.17.0 | 全链路示例与文档定稿：login-demo、ERRORS.md、README 核对（已发布） |
 | v0.18.0 | 边界与并发打磨：TTL 精确边界矩阵、并发 bench、九目标 fuzz（已发布） |
+| v0.19.0 | 发布前终审：清理任务 panic 恢复、依赖整理、并发/泄漏终审（已发布，版本线完成） |
 
 ## 规范
 

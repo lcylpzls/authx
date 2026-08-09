@@ -60,3 +60,27 @@ func TestCleanupHandleNilStop(t *testing.T) {
 	var h *CleanupHandle
 	h.Stop()
 }
+
+// TestStartCleanupPanicRecover 覆盖清理函数 panic 恢复。
+func TestStartCleanupPanicRecover(t *testing.T) {
+	var mu sync.Mutex
+	count := 0
+	fired := make(chan struct{}, 4)
+	h := StartCleanup(10*time.Millisecond, func() int {
+		mu.Lock()
+		count++
+		panicking := count == 1
+		mu.Unlock()
+		if panicking {
+			panic("清理故障")
+		}
+		fired <- struct{}{}
+		return 1
+	})
+	defer h.Stop()
+	select {
+	case <-fired:
+	case <-time.After(3 * time.Second):
+		t.Fatal("panic 后后台任务应继续运行")
+	}
+}

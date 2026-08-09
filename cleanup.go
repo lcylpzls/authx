@@ -33,7 +33,10 @@ func StartCleanup(interval time.Duration, fn func() int) *CleanupHandle {
 		for {
 			select {
 			case <-ticker.C:
-				fn()
+				func() {
+					defer func() { _ = recover() }() // 单次 panic 不得终止后台任务。
+					fn()
+				}()
 			case <-h.stop:
 				return
 			}

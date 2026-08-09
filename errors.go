@@ -31,6 +31,18 @@ const (
 	CodeRefreshTokenInvalid errx.Code = "authx_refresh_token_invalid"
 	// CodeStoreInvalid 存储参数非法。
 	CodeStoreInvalid errx.Code = "authx_store_invalid"
+	// CodeForbidden 已认证但无权限（403）。
+	CodeForbidden errx.Code = "authx_forbidden"
+	// CodeRBACRoleNotFound 角色不存在。
+	CodeRBACRoleNotFound errx.Code = "authx_rbac_role_not_found"
+	// CodeRBACRoleExists 角色已存在。
+	CodeRBACRoleExists errx.Code = "authx_rbac_role_exists"
+	// CodeRBACCycle 角色继承形成环。
+	CodeRBACCycle errx.Code = "authx_rbac_cycle"
+	// CodeRBACInvalid 角色名/权限参数非法。
+	CodeRBACInvalid errx.Code = "authx_rbac_invalid"
+	// CodeCSRFMismatch CSRF 校验不通过。
+	CodeCSRFMismatch errx.Code = "authx_csrf_mismatch"
 )
 
 // 预定义错误值，可用 errx.Is 判断。
@@ -53,4 +65,16 @@ var (
 	ErrTokenRevoked = errx.New(errx.KindUnauthorized, CodeTokenRevoked, "令牌已撤销")
 	// ErrRefreshTokenInvalid 刷新令牌无效或已使用。
 	ErrRefreshTokenInvalid = errx.New(errx.KindUnauthorized, CodeRefreshTokenInvalid, "刷新令牌无效或已使用")
+	// ErrForbidden 已认证但无权限。
+	ErrForbidden = errx.New(errx.KindForbidden, CodeForbidden, "无权限执行该操作")
+	// ErrRoleNotFound 角色不存在。
+	ErrRoleNotFound = errx.New(errx.KindInvalid, CodeRBACRoleNotFound, "角色不存在")
+	// ErrRoleExists 角色已存在。
+	ErrRoleExists = errx.New(errx.KindConflict, CodeRBACRoleExists, "角色已存在")
+	// ErrCycle 角色继承形成环。
+	ErrCycle = errx.New(errx.KindInvalid, CodeRBACCycle, "角色继承不能形成环")
+	// ErrRBACInvalid 角色名/权限参数非法。
+	ErrRBACInvalid = errx.New(errx.KindInvalid, CodeRBACInvalid, "角色或权限参数非法")
+	// ErrCSRFMismatch CSRF 校验不通过。
+	ErrCSRFMismatch = errx.New(errx.KindForbidden, CodeCSRFMismatch, "CSRF 校验失败")
 )

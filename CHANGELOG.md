@@ -2,6 +2,21 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+## [v0.3.0] - 2026-08-09
+
+### 新增
+
+- rbac 包：角色-权限模型：
+  - `AddRole`/`AddPermission`/`Inherit`（角色继承，自引用与环检测）；
+  - `HasPermission`/`HasAnyPermission`/`HasAllPermissions`/`PermissionsOf`；
+  - 读写并发安全，适合启动期加载 + 请求期只读；
+- middleware 包：webx 认证授权中间件：
+  - `Auth`：Bearer Token 解析、令牌校验、身份注入，401 标准响应；
+  - `RequirePermission`/`RequireRole`：RBAC 鉴权，403 标准响应；
+  - `CSRF`：双提交 Cookie 校验，安全方法自动放行；
+  - `ClaimsFrom`/`UserID`：处理器内读取用户身份；
+- 新增错误码：RBAC 角色/环/权限、Forbidden、CSRF。
+
 ## [v0.2.0] - 2026-08-09
 
 ### 新增

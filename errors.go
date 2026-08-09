@@ -69,6 +69,8 @@ const (
 	CodePasswordTooWeak errx.Code = "authx_password_too_weak"
 	// CodeTokenMissing 请求未携带访问令牌（401）。
 	CodeTokenMissing errx.Code = "authx_token_missing"
+	// CodeAuditQueueFull 异步审计队列已满，事件被丢弃。
+	CodeAuditQueueFull errx.Code = "authx_audit_queue_full"
 )
 
 // 预定义错误值，可用 errx.Is 判断。
@@ -129,4 +131,6 @@ var (
 	ErrPasswordTooWeak = errx.New(errx.KindInvalid, CodePasswordTooWeak, "密码强度不足")
 	// ErrTokenMissing 请求未携带访问令牌。
 	ErrTokenMissing = errx.New(errx.KindUnauthorized, CodeTokenMissing, "缺少访问令牌")
+	// ErrAuditQueueFull 异步审计队列已满。
+	ErrAuditQueueFull = errx.New(errx.KindRateLimited, CodeAuditQueueFull, "审计队列已满")
 )

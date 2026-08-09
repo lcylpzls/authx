@@ -94,6 +94,7 @@ defer sessCleanup.Stop()
 | v0.12.0 | 质量收口：六目标 fuzz、govulncheck、基准测试、SECURITY、终审加固（已发布，版本线完成） |
 | v0.13.0 | 中间件错误响应工业化：统一 errx 结构化 JSON、可注入错误处理器（已发布） |
 | v0.14.0 | 审计异步化：AsyncAuditor 批量落库、丢弃/阻塞策略、优雅关闭（已发布） |
+| v0.15.0 | OAuth2 服务端可插拔存储：WithClientStore/WithTokenStore 多实例就绪（已发布） |
 
 ## 规范
 

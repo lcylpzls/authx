@@ -1,6 +1,7 @@
 package oauth2
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -11,6 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	gooauth2 "github.com/go-oauth2/oauth2/v4"
+	"github.com/go-oauth2/oauth2/v4/models"
+	"github.com/go-oauth2/oauth2/v4/store"
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/errx"
 	"github.com/lcylpzls/webx"
@@ -63,6 +67,49 @@ func TestNewServerErrors(t *testing.T) {
 	if _, err := NewServer(ServerConfig{ClientID: testClientID, RedirectURL: testRedirect},
 		func(*Server) error { return errors.New("选项失败") }); err == nil {
 		t.Fatal("返回错误的选项应导致构造失败")
+	}
+}
+
+// recordingClientStore 记录查询的自定义客户端存储。
+type recordingClientStore struct {
+	called bool
+}
+
+func (r *recordingClientStore) GetByID(_ context.Context, id string) (gooauth2.ClientInfo, error) {
+	r.called = true
+	return &models.Client{ID: id, Secret: "s", Domain: testRedirect}, nil
+}
+
+// TestServerStores 覆盖可插拔存储选项。
+func TestServerStores(t *testing.T) {
+	if _, err := NewServer(ServerConfig{ClientID: testClientID, RedirectURL: testRedirect},
+		WithClientStore(nil)); err == nil || !errx.Is(err, authx.CodeOAuth2ConfigInvalid) {
+		t.Fatalf("空客户端存储应报错，实际：%v", err)
+	}
+	if _, err := NewServer(ServerConfig{ClientID: testClientID, RedirectURL: testRedirect},
+		WithTokenStore(nil)); err == nil || !errx.Is(err, authx.CodeOAuth2ConfigInvalid) {
+		t.Fatalf("空令牌存储应报错，实际：%v", err)
+	}
+	// 注入 go-oauth2 自带内存实现。
+	memTokens, err := store.NewMemoryTokenStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewServer(ServerConfig{ClientID: testClientID, RedirectURL: testRedirect},
+		WithClientStore(store.NewClientStore()),
+		WithTokenStore(memTokens)); err != nil {
+		t.Fatalf("注入内存存储应成功：%v", err)
+	}
+	// 注入自定义客户端存储并验证生效。
+	rec := &recordingClientStore{}
+	s2, err := NewServer(ServerConfig{ClientID: testClientID, RedirectURL: testRedirect},
+		WithClientStore(rec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli, err := s2.manager.GetClient(context.Background(), "custom")
+	if err != nil || !rec.called || cli.GetID() != "custom" {
+		t.Fatalf("自定义客户端存储未生效：cli=%v err=%v called=%v", cli, err, rec.called)
 	}
 }
 

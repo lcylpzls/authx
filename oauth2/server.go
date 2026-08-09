@@ -4,6 +4,7 @@ package oauth2
 import (
 	"net/http"
 
+	gooauth2 "github.com/go-oauth2/oauth2/v4"
 	"github.com/go-oauth2/oauth2/v4/manage"
 	"github.com/go-oauth2/oauth2/v4/models"
 	oauth2server "github.com/go-oauth2/oauth2/v4/server"
@@ -34,9 +35,32 @@ func WithClientBasicAuth() ServerOption {
 	}
 }
 
+// WithClientStore 注入自定义客户端存储（多实例共享场景，替代内置内存客户端表）。
+func WithClientStore(stor gooauth2.ClientStore) ServerOption {
+	return func(s *Server) error {
+		if stor == nil {
+			return errx.New(errx.KindInvalid, authx.CodeOAuth2ConfigInvalid, "客户端存储不能为空")
+		}
+		s.manager.MapClientStorage(stor)
+		return nil
+	}
+}
+
+// WithTokenStore 注入自定义令牌存储（多实例共享场景，替代内置内存令牌存储）。
+func WithTokenStore(stor gooauth2.TokenStore) ServerOption {
+	return func(s *Server) error {
+		if stor == nil {
+			return errx.New(errx.KindInvalid, authx.CodeOAuth2ConfigInvalid, "令牌存储不能为空")
+		}
+		s.manager.MapTokenStorage(stor)
+		return nil
+	}
+}
+
 // Server OAuth2 授权服务（授权码 + PKCE + 刷新令牌）。
 type Server struct {
 	inner       *oauth2server.Server
+	manager     *manage.Manager
 	contextAuth bool // 是否使用请求上下文解析登录态（预检查未登录）
 }
 
@@ -58,7 +82,7 @@ func NewServer(cfg ServerConfig, opts ...ServerOption) (*Server, error) {
 	srv := oauth2server.NewDefaultServer(manager)
 	srv.SetAllowGetAccessRequest(true)
 	srv.SetClientInfoHandler(oauth2server.ClientFormHandler)
-	s := &Server{inner: srv}
+	s := &Server{inner: srv, manager: manager}
 	for _, opt := range opts {
 		if err := opt(s); err != nil {
 			return nil, err

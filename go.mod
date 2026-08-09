@@ -1,6 +1,6 @@
 module github.com/lcylpzls/authx
 
-go 1.26.5
+go 1.26.0
 
 require (
 	github.com/go-oauth2/oauth2/v4 v4.5.4

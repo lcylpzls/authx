@@ -450,3 +450,24 @@ func TestRotateSessionSigned(t *testing.T) {
 		t.Fatalf("轮换后签名应匹配新 ID：id=%q ok=%v new=%q", id, ok, newID)
 	}
 }
+
+// TestSessionCookieTooLong 覆盖超长会话 Cookie 防御（视为无会话并重建）。
+func TestSessionCookieTooLong(t *testing.T) {
+	store := session.NewMemoryStore(nil)
+	mw := Session(store, "sid", WithSessionSecure(false))
+	long := strings.Repeat("x", maxSessionCookieLen+1)
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	req.AddCookie(&http.Cookie{Name: "sid", Value: long})
+	w := httptest.NewRecorder()
+	c := webx.NewContext(w, req)
+	handled := false
+	c.SetHandlers([]webx.HandlerFunc{mw, func(c *webx.Context) { handled = true }})
+	c.Run()
+	if !handled {
+		t.Fatal("超长 Cookie 应重建会话并放行")
+	}
+	// 不应以超长值查询存储（存储中不存在该键）。
+	if _, err := store.Get(context.Background(), long); err == nil {
+		t.Fatal("存储不应存在超长键")
+	}
+}

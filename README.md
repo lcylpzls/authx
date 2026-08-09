@@ -12,7 +12,8 @@
 - 审计：结构化审计日志（logx 集成）+ 持久化钩子；
 - 安全：登录失败计数、账号锁定、滑动窗口清理。
 
-质量基线：核心包 100% 语句覆盖、六目标 fuzz（password/token/rbac/mfa/session/security）、
+质量基线：核心包 100% 语句覆盖、九目标 fuzz
+（password/token/rbac/mfa/session/security/audit/middleware/oauth2）、
 race 检测、三平台 CI + govulncheck 依赖漏洞扫描、全套基准测试。
 
 ## 目录
@@ -41,22 +42,28 @@ authx/
 go get github.com/lcylpzls/authx
 ```
 
-## 快速开始（v0.1.0：密码哈希）
+## 快速开始
 
 ```go
 import (
+	"time"
+
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/authx/password"
+	"github.com/lcylpzls/authx/token"
 )
 
-// 注册：哈希明文并存储
+// 密码哈希：哈希、校验、参数迁移。
 hash, err := password.Hash("password123", authx.DefaultPasswordConfig())
-
-// 登录：校验明文
 ok, err := password.Verify(hash, "password123")
 
-// 惰性迁移：参数升级时重新哈希
-need, err := password.NeedsRehash(hash, authx.DefaultPasswordConfig())
+// 访问令牌：签发与校验。
+signer, err := token.NewHS256([]byte("0123456789abcdef0123456789abcdef"),
+	token.WithIssuer("myapp"), token.WithTTL(15*time.Minute))
+raw, err := signer.Sign("u-1001", token.WithRoles("admin"))
+claims, err := signer.Parse(raw)
+
+// 完整登录流程（会话/CSRF/RBAC/JWT/MFA/OAuth2/审计）见 examples/login-demo。
 ```
 
 ## 内存存储周期清理
@@ -102,6 +109,7 @@ defer sessCleanup.Stop()
 | v0.17.0 | 全链路示例与文档定稿：login-demo、ERRORS.md、README 核对（已发布） |
 | v0.18.0 | 边界与并发打磨：TTL 精确边界矩阵、并发 bench、九目标 fuzz（已发布） |
 | v0.19.0 | 发布前终审：清理任务 panic 恢复、依赖整理、并发/泄漏终审（已发布，版本线完成） |
+| v1.0.0 | 正式版：进入语义化版本稳定期，v1.x 起承诺无破坏性 API 变更（已发布） |
 
 ## 规范
 

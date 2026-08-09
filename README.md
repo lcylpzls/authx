@@ -100,6 +100,7 @@ defer sessCleanup.Stop()
 | v0.15.0 | OAuth2 服务端可插拔存储：WithClientStore/WithTokenStore 多实例就绪（已发布） |
 | v0.16.0 | 会话与 CSRF 纵深防御：Cookie HMAC 签名、Origin/Referer 校验（已发布） |
 | v0.17.0 | 全链路示例与文档定稿：login-demo、ERRORS.md、README 核对（已发布） |
+| v0.18.0 | 边界与并发打磨：TTL 精确边界矩阵、并发 bench、九目标 fuzz（已发布） |
 
 ## 规范
 

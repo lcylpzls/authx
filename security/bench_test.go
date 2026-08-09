@@ -17,3 +17,18 @@ func BenchmarkRecordFailure(b *testing.B) {
 		_ = g.RecordFailure("u-1001")
 	}
 }
+
+// BenchmarkGuardConcurrent 测量高并发失败记录与锁定查询。
+func BenchmarkGuardConcurrent(b *testing.B) {
+	g, err := NewLoginGuard(1000, time.Minute)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = g.RecordFailure("u-1001")
+			_ = g.IsLocked("u-1001")
+		}
+	})
+}

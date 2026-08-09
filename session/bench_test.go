@@ -32,3 +32,20 @@ func BenchmarkStoreGet(b *testing.B) {
 		_, _ = store.Get(ctx, sess.ID)
 	}
 }
+
+// BenchmarkStoreConcurrent 测量高并发会话读写。
+func BenchmarkStoreConcurrent(b *testing.B) {
+	store := NewMemoryStore(nil)
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			sess, err := store.Create(ctx, time.Hour)
+			if err != nil {
+				continue
+			}
+			_, _ = store.Get(ctx, sess.ID)
+			_ = store.Delete(ctx, sess.ID)
+		}
+	})
+}

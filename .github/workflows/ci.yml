@@ -73,6 +73,9 @@ jobs:
           go test -run '^$' -fuzz '^FuzzTOTP$' -fuzztime=10s ./mfa/
           go test -run '^$' -fuzz '^FuzzSessionStore$' -fuzztime=10s ./session/
           go test -run '^$' -fuzz '^FuzzLoginGuard$' -fuzztime=10s ./security/
+          go test -run '^$' -fuzz '^FuzzAuditEvent$' -fuzztime=10s ./audit/
+          go test -run '^$' -fuzz '^FuzzCSRF$' -fuzztime=10s ./middleware/
+          go test -run '^$' -fuzz '^FuzzOAuth2Config$' -fuzztime=10s ./oauth2/
 
   vulncheck:
     runs-on: ubuntu-latest

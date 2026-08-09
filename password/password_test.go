@@ -121,6 +121,8 @@ func TestVerifyHashFormatErrors(t *testing.T) {
 		"$argon2id$v=18$m=32,t=3,p=4$" + salt + "$" + key,
 		"$argon2id$v=19$m=32,t=3$" + salt + "$" + key,
 		"$argon2id$v=19$m=1,t=3,p=4$" + salt + "$" + key,
+		"$argon2id$v=19$m=262145,t=3,p=4$" + salt + "$" + key,
+		"$argon2id$v=19$m=32,t=1001,p=4$" + salt + "$" + key,
 		"$argon2id$v=19$m=32,t=0,p=4$" + salt + "$" + key,
 		"$argon2id$v=19$m=32,t=3,p=0$" + salt + "$" + key,
 		"$argon2id$v=19$m=32,t=3,p=5$" + salt + "$" + key,
@@ -128,6 +130,8 @@ func TestVerifyHashFormatErrors(t *testing.T) {
 		"$argon2id$v=19$m=32,t=3,p=4$" + salt + "$%%%",
 		"$argon2id$v=19$m=32,t=3,p=4$" + enc.EncodeToString([]byte{0x01, 0x02}) + "$" + key,
 		"$argon2id$v=19$m=32,t=3,p=4$" + salt + "$" + enc.EncodeToString([]byte{0x11}),
+		"$argon2id$v=19$m=32,t=3,p=4$" + enc.EncodeToString(make([]byte, 1025)) + "$" + key,
+		"$argon2id$v=19$m=32,t=3,p=4$" + salt + "$" + enc.EncodeToString(make([]byte, 4097)),
 	}
 	for i, h := range bad {
 		if _, err := Verify(h, "password123"); err == nil || !errx.Is(err, authx.CodePasswordHashInvalid) {

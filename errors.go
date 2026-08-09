@@ -53,6 +53,10 @@ const (
 	CodeMFAInvalid errx.Code = "authx_mfa_invalid"
 	// CodeMFAConfigInvalid 多因素配置非法。
 	CodeMFAConfigInvalid errx.Code = "authx_mfa_config_invalid"
+	// CodeOAuth2Invalid OAuth2 流程失败（令牌交换、授权码等）。
+	CodeOAuth2Invalid errx.Code = "authx_oauth2_invalid"
+	// CodeOAuth2ConfigInvalid OAuth2 配置非法。
+	CodeOAuth2ConfigInvalid errx.Code = "authx_oauth2_config_invalid"
 )
 
 // 预定义错误值，可用 errx.Is 判断。
@@ -97,4 +101,8 @@ var (
 	ErrMFAInvalid = errx.New(errx.KindInvalid, CodeMFAInvalid, "多因素参数非法")
 	// ErrMFAConfigInvalid 多因素配置非法。
 	ErrMFAConfigInvalid = errx.New(errx.KindInvalid, CodeMFAConfigInvalid, "多因素配置非法")
+	// ErrOAuth2Invalid OAuth2 流程失败。
+	ErrOAuth2Invalid = errx.New(errx.KindUnauthorized, CodeOAuth2Invalid, "OAuth2 流程失败")
+	// ErrOAuth2ConfigInvalid OAuth2 配置非法。
+	ErrOAuth2ConfigInvalid = errx.New(errx.KindInvalid, CodeOAuth2ConfigInvalid, "OAuth2 配置非法")
 )

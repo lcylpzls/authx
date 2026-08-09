@@ -8,7 +8,8 @@
 - 集成：webx 认证/权限/CSRF 中间件（Bearer 校验、401/403 标准响应）；
 - 会话：Session 存储接口 + 内存实现 + webx 会话中间件（自动落库）；
 - 多因素：TOTP（RFC 6238）与恢复码；
-- 增强：OAuth2/OIDC、审计与安全策略（规划中）。
+- OAuth2：客户端（授权码 + PKCE）与服务端（授权码 + PKCE + 刷新令牌）；
+- 增强：审计与安全策略（规划中）。
 
 ## 安装
 
@@ -42,7 +43,7 @@ need, err := password.NeedsRehash(hash, authx.DefaultPasswordConfig())
 | v0.2.0 | token：JWT 全套、刷新令牌、撤销（已发布） |
 | v0.3.0 | rbac + middleware：webx 认证/权限/CSRF（已发布） |
 | v0.4.0 | session + mfa：会话与 TOTP（已发布） |
-| v0.5.0 | oauth2：客户端与授权码/PKCE 服务端 |
+| v0.5.0 | oauth2：客户端与授权码/PKCE 服务端（已发布） |
 | v0.6.0 | audit + security：审计、锁定、频控与 full 示例 |
 
 ## 规范

@@ -1,0 +1,3 @@
+go test fuzz v1
+string("$argon2id$v=19$m=10750,t=2,p=2$81100111220777$0000700200020100010210")
+string("0k|\x003_\x0fMB")

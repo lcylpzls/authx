@@ -17,6 +17,11 @@ import (
 const (
 	minPlainLength = 8    // 新密码最短长度
 	maxPlainLength = 1024 // 明文长度上限（防 DoS）
+	// 解析哈希时的参数上限（防恶意哈希引发超大内存/CPU 开销）。
+	maxMemoryKiB     = 1 << 18 // 256 MiB
+	maxIterations    = 1000
+	maxSaltLength    = 1024
+	maxDerivedKeyLen = 4096
 )
 
 // randRead 可替换的随机源，便于测试注入失败场景。
@@ -105,8 +110,14 @@ func parseHash(hash string) (params, []byte, []byte, error) {
 	if len(salt) < 8 {
 		return zero, nil, nil, wrapHashInvalid("盐长度至少 8 字节")
 	}
+	if len(salt) > maxSaltLength {
+		return zero, nil, nil, wrapHashInvalid("盐长度超出上限")
+	}
 	if len(key) < 16 {
 		return zero, nil, nil, wrapHashInvalid("密钥长度至少 16 字节")
+	}
+	if len(key) > maxDerivedKeyLen {
+		return zero, nil, nil, wrapHashInvalid("密钥长度超出上限")
 	}
 	return par, salt, key, nil
 }
@@ -124,8 +135,14 @@ func parseParams(s string) (params, error) {
 	if memory < 8 {
 		return zero, wrapHashInvalid("内存成本过低，至少 8KiB")
 	}
+	if memory > maxMemoryKiB {
+		return zero, wrapHashInvalid("内存成本超出上限")
+	}
 	if iterations <= 0 {
 		return zero, wrapHashInvalid("时间成本必须为正")
+	}
+	if iterations > maxIterations {
+		return zero, wrapHashInvalid("时间成本超出上限")
 	}
 	if parallelism <= 0 || parallelism > 4 {
 		return zero, wrapHashInvalid("并行度必须在 1-4 之间")

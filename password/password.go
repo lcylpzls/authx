@@ -24,17 +24,102 @@ const (
 	maxDerivedKeyLen = 4096
 )
 
+// StrengthConfig 可选的密码强度策略；零值表示仅使用默认长度规则。
+// 字段为 0 或 false 时对应规则不启用。
+type StrengthConfig struct {
+	// MinLength 最小长度；0 表示沿用默认下限（8）。
+	MinLength int
+	// MaxLength 最大长度；0 表示沿用默认上限（1024）。
+	MaxLength int
+	// RequireUpper 要求至少一个大写字母。
+	RequireUpper bool
+	// RequireLower 要求至少一个小写字母。
+	RequireLower bool
+	// RequireDigit 要求至少一个数字。
+	RequireDigit bool
+	// RequireSymbol 要求至少一个符号（非字母数字）。
+	RequireSymbol bool
+}
+
+// Validate 校验强度策略本身是否合法。
+func (c StrengthConfig) Validate() error {
+	if c.MinLength < 0 || c.MaxLength < 0 {
+		return errx.New(errx.KindInvalid, authx.CodePasswordConfigInvalid, "强度策略长度不能为负")
+	}
+	if c.MinLength > 0 && c.MinLength < minPlainLength {
+		return errx.New(errx.KindInvalid, authx.CodePasswordConfigInvalid, "强度策略最小长度不能低于默认下限")
+	}
+	if c.MaxLength > 0 && c.MaxLength < minPlainLength {
+		return errx.New(errx.KindInvalid, authx.CodePasswordConfigInvalid, "强度策略最大长度不能低于默认下限")
+	}
+	if c.MinLength > 0 && c.MaxLength > 0 && c.MinLength > c.MaxLength {
+		return errx.New(errx.KindInvalid, authx.CodePasswordConfigInvalid, "强度策略最小长度不能大于最大长度")
+	}
+	return nil
+}
+
+// Check 校验明文是否满足强度策略；不满足返回 ErrPasswordTooWeak。
+func (c StrengthConfig) Check(plain string) error {
+	min, max := minPlainLength, maxPlainLength
+	if c.MinLength > 0 {
+		min = c.MinLength
+	}
+	if c.MaxLength > 0 {
+		max = c.MaxLength
+	}
+	switch {
+	case len(plain) < min:
+		return authx.ErrPasswordTooShort
+	case len(plain) > max:
+		return authx.ErrPasswordTooLong
+	}
+	var hasUpper, hasLower, hasDigit, hasSymbol bool
+	for _, r := range plain {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			hasUpper = true
+		case r >= 'a' && r <= 'z':
+			hasLower = true
+		case r >= '0' && r <= '9':
+			hasDigit = true
+		default:
+			hasSymbol = true
+		}
+	}
+	switch {
+	case c.RequireUpper && !hasUpper:
+		return authx.ErrPasswordTooWeak
+	case c.RequireLower && !hasLower:
+		return authx.ErrPasswordTooWeak
+	case c.RequireDigit && !hasDigit:
+		return authx.ErrPasswordTooWeak
+	case c.RequireSymbol && !hasSymbol:
+		return authx.ErrPasswordTooWeak
+	}
+	return nil
+}
+
 // randRead 可替换的随机源，便于测试注入失败场景。
 var randRead = rand.Read
 
 // Hash 使用 Argon2id 派生密钥并返回标准编码的哈希串。
 // 格式：$argon2id$v=19$m=<内存>,t=<时间>,p=<并行>$<盐 base64>$<密钥 base64>
 func Hash(plain string, cfg authx.PasswordConfig) (string, error) {
-	switch {
-	case len(plain) < minPlainLength:
-		return "", authx.ErrPasswordTooShort
-	case len(plain) > maxPlainLength:
-		return "", authx.ErrPasswordTooLong
+	return hashWithStrength(plain, cfg, StrengthConfig{})
+}
+
+// HashWithStrength 使用 Argon2id 派生密钥，并在哈希前校验密码强度策略。
+func HashWithStrength(plain string, cfg authx.PasswordConfig, strength StrengthConfig) (string, error) {
+	if err := strength.Validate(); err != nil {
+		return "", err
+	}
+	return hashWithStrength(plain, cfg, strength)
+}
+
+// hashWithStrength 内部实现：先做强度与哈希参数校验，再派生。
+func hashWithStrength(plain string, cfg authx.PasswordConfig, strength StrengthConfig) (string, error) {
+	if err := strength.Check(plain); err != nil {
+		return "", err
 	}
 	if err := cfg.Validate(); err != nil {
 		return "", err

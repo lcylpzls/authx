@@ -2,6 +2,30 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+## [v0.9.0] - 2026-08-09
+
+### 新增
+
+- TOTP 完整化（RFC 6238 全规范）：
+  - `TOTPConfig`：算法（SHA1/SHA256/SHA512）、位数（6/8）、
+    时间步长可配置，`DefaultTOTPConfig` 保持 SHA1/6 位/30 秒兼容；
+  - `GenerateCodeWithConfig`/`ValidateCodeWithConfig` 配置化入口，
+    旧 API 行为不变；SHA-256/512 按 RFC 6238 附录 B 官方向量验证；
+- 恢复码存储：
+  - `RecoveryCodeStore` 接口（哈希落库、消费状态、TTL），
+    `MemoryRecoveryCodeStore` 内存实现（容量上限 + 周期清理）；
+  - `IssueRecoveryCodes`：生成并落库；`VerifyRecoveryCodeWithStore`：
+    校验并可一次性消费；
+- 密码强度策略：
+  - `StrengthConfig`（长度上下限、大小写/数字/符号要求）与
+    `Check`；`HashWithStrength` 在哈希前执行策略校验；
+  - 默认 `Hash` 行为不变（零值策略仅长度规则）；
+- JWT 时间容差：`WithLeeway` 允许签发/校验时钟偏移；
+
+### 变更
+
+- 新增错误码：`authx_password_too_weak`。
+
 ## [v0.8.0] - 2026-08-09
 
 ### 新增

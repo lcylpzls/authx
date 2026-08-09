@@ -34,6 +34,7 @@ type Signer struct {
 	issuer    string
 	audience  []string
 	ttl       time.Duration
+	leeway    time.Duration
 	revoke    RevocationStore
 	now       func() time.Time
 }
@@ -92,6 +93,17 @@ func WithClock(now func() time.Time) Option {
 			return errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "时间源不能为空")
 		}
 		s.now = now
+		return nil
+	}
+}
+
+// WithLeeway 设置签发/校验的时间容差（允许客户端时钟偏移，必须非负）。
+func WithLeeway(d time.Duration) Option {
+	return func(s *Signer) error {
+		if d < 0 {
+			return errx.New(errx.KindInvalid, authx.CodeTokenConfigInvalid, "时间容差不能为负")
+		}
+		s.leeway = d
 		return nil
 	}
 }
@@ -218,6 +230,9 @@ func (s *Signer) Sign(subject string, opts ...ClaimOption) (string, error) {
 func (s *Signer) Parse(raw string) (Claims, error) {
 	var claims Claims
 	opts := []jwt.ParserOption{jwt.WithTimeFunc(s.now)}
+	if s.leeway > 0 {
+		opts = append(opts, jwt.WithLeeway(s.leeway))
+	}
 	if s.issuer != "" {
 		opts = append(opts, jwt.WithIssuer(s.issuer))
 	}

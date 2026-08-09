@@ -278,6 +278,43 @@ func TestNewJTIError(t *testing.T) {
 	}
 }
 
+// TestWithLeeway 覆盖时间容差配置与校验。
+func TestWithLeeway(t *testing.T) {
+	secret, _, _, _ := testKey(t)
+	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
+	if _, err := NewHS256(secret, WithLeeway(-time.Second)); err == nil ||
+		!errx.Is(err, authx.CodeTokenConfigInvalid) {
+		t.Fatalf("负容差应报错，实际：%v", err)
+	}
+	issuer, err := NewHS256(secret, WithTTL(time.Minute),
+		WithClock(func() time.Time { return now }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := issuer.Sign("u-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 校验端时钟快 90 秒，容差 2 分钟 → 通过。
+	lenient, err := NewHS256(secret, WithLeeway(2*time.Minute),
+		WithClock(func() time.Time { return now.Add(90 * time.Second) }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lenient.Parse(raw); err != nil {
+		t.Fatalf("容差内应通过：%v", err)
+	}
+	// 容差仅 10 秒 → 过期。
+	strict, err := NewHS256(secret, WithLeeway(10*time.Second),
+		WithClock(func() time.Time { return now.Add(90 * time.Second) }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := strict.Parse(raw); !errx.Is(err, authx.CodeTokenExpired) {
+		t.Fatalf("超出容差应报过期，实际：%v", err)
+	}
+}
+
 // failingRevocationStore 返回固定错误的撤销存储。
 type failingRevocationStore struct {
 	err error

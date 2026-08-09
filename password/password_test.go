@@ -189,3 +189,80 @@ func TestNeedsRehash(t *testing.T) {
 		t.Fatalf("非法配置应报错，实际：%v", err)
 	}
 }
+
+// TestStrengthConfigValidate 覆盖强度策略自身校验。
+func TestStrengthConfigValidate(t *testing.T) {
+	for _, cfg := range []StrengthConfig{
+		{MinLength: -1},
+		{MaxLength: -1},
+		{MinLength: 4},
+		{MaxLength: 4},
+		{MinLength: 20, MaxLength: 10},
+	} {
+		if err := cfg.Validate(); err == nil || !errx.Is(err, authx.CodePasswordConfigInvalid) {
+			t.Fatalf("非法策略应报错：%+v 实际 %v", cfg, err)
+		}
+	}
+	var zero StrengthConfig
+	if err := zero.Validate(); err != nil {
+		t.Fatalf("零值策略应合法：%v", err)
+	}
+	if err := (StrengthConfig{MinLength: 12, MaxLength: 20}).Validate(); err != nil {
+		t.Fatalf("合法策略应通过：%v", err)
+	}
+}
+
+// TestStrengthCheck 覆盖强度规则各分支。
+func TestStrengthCheck(t *testing.T) {
+	all := StrengthConfig{
+		MinLength:     10,
+		MaxLength:     20,
+		RequireUpper:  true,
+		RequireLower:  true,
+		RequireDigit:  true,
+		RequireSymbol: true,
+	}
+	if err := all.Check("Abcdef1234!"); err != nil {
+		t.Fatalf("满足全部规则应通过：%v", err)
+	}
+	if err := all.Check("Abcdef1!"); err == nil || !errx.Is(err, authx.CodePasswordTooShort) {
+		t.Fatalf("过短应报错：%v", err)
+	}
+	if err := all.Check("Abcdef12345678901234!"); err == nil || !errx.Is(err, authx.CodePasswordTooLong) {
+		t.Fatalf("过长应报错：%v", err)
+	}
+	if err := all.Check("abcdef1234!"); err == nil || !errx.Is(err, authx.CodePasswordTooWeak) {
+		t.Fatalf("缺大写应报弱：%v", err)
+	}
+	if err := all.Check("ABCDEF1234!"); err == nil || !errx.Is(err, authx.CodePasswordTooWeak) {
+		t.Fatalf("缺小写应报弱：%v", err)
+	}
+	if err := all.Check("Abcdefghij!"); err == nil || !errx.Is(err, authx.CodePasswordTooWeak) {
+		t.Fatalf("缺数字应报弱：%v", err)
+	}
+	if err := all.Check("Abcdef1234"); err == nil || !errx.Is(err, authx.CodePasswordTooWeak) {
+		t.Fatalf("缺符号应报弱：%v", err)
+	}
+}
+
+// TestHashWithStrength 覆盖带强度策略的哈希。
+func TestHashWithStrength(t *testing.T) {
+	cfg := authx.DefaultPasswordConfig()
+	h, err := HashWithStrength("Abcdef1234!", cfg, StrengthConfig{RequireUpper: true, RequireLower: true,
+		RequireDigit: true, RequireSymbol: true})
+	if err != nil {
+		t.Fatalf("满足策略应成功：%v", err)
+	}
+	ok, err := Verify(h, "Abcdef1234!")
+	if err != nil || !ok {
+		t.Fatalf("校验应通过：ok=%v err=%v", ok, err)
+	}
+	if _, err := HashWithStrength("abcdefgh", cfg, StrengthConfig{RequireDigit: true}); err == nil ||
+		!errx.Is(err, authx.CodePasswordTooWeak) {
+		t.Fatalf("不满足策略应报弱：%v", err)
+	}
+	if _, err := HashWithStrength("Abcdef1234!", cfg, StrengthConfig{MinLength: 4}); err == nil ||
+		!errx.Is(err, authx.CodePasswordConfigInvalid) {
+		t.Fatalf("非法策略应报错：%v", err)
+	}
+}

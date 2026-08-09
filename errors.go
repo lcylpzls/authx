@@ -65,6 +65,8 @@ const (
 	CodeRBACLimit errx.Code = "authx_rbac_limit"
 	// CodeCSRFGenerationFailed CSRF 令牌生成失败。
 	CodeCSRFGenerationFailed errx.Code = "authx_csrf_generation_failed"
+	// CodePasswordTooWeak 明文密码不满足强度策略。
+	CodePasswordTooWeak errx.Code = "authx_password_too_weak"
 )
 
 // 预定义错误值，可用 errx.Is 判断。
@@ -121,4 +123,6 @@ var (
 	ErrRBACLimit = errx.New(errx.KindInvalid, CodeRBACLimit, "RBAC 规模超出上限")
 	// ErrCSRFGenerationFailed CSRF 令牌生成失败。
 	ErrCSRFGenerationFailed = errx.New(errx.KindUnavailable, CodeCSRFGenerationFailed, "CSRF 令牌生成失败")
+	// ErrPasswordTooWeak 明文密码不满足强度策略。
+	ErrPasswordTooWeak = errx.New(errx.KindInvalid, CodePasswordTooWeak, "密码强度不足")
 )

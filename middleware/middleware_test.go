@@ -13,7 +13,7 @@ import (
 	"github.com/lcylpzls/authx/rbac"
 	"github.com/lcylpzls/authx/token"
 	"github.com/lcylpzls/errx"
-	"github.com/lcylpzls/webx/v2"
+	"github.com/lcylpzls/webx"
 )
 
 // newSigner 构造测试签发器。
@@ -298,7 +298,7 @@ func TestGenerateCSRFTokenError(t *testing.T) {
 		t.Fatalf("正常生成应成功：%q %v", token, err)
 	}
 	orig := randRead
-	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
+	randRead = func(n int) ([]byte, error) { return nil, errors.New("随机源故障") }
 	defer func() { randRead = orig }()
 	if _, err := GenerateCSRFToken(); err == nil || !errx.Is(err, authx.CodeCSRFGenerationFailed) {
 		t.Fatalf("随机源故障应报错，实际：%v", err)
@@ -372,7 +372,7 @@ func TestCSRFProtect(t *testing.T) {
 // TestCSRFProtectGenerationFailure 覆盖令牌生成失败返回 500。
 func TestCSRFProtectGenerationFailure(t *testing.T) {
 	orig := randRead
-	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
+	randRead = func(n int) ([]byte, error) { return nil, errors.New("随机源故障") }
 	defer func() { randRead = orig }()
 	mw := CSRFProtect("csrf", "X-CSRF-Token")
 	w, _ := runChain(t, http.MethodGet, mw)
@@ -569,7 +569,7 @@ func TestCSRFErrorHandler(t *testing.T) {
 	}
 	// 生成失败 → 500。
 	orig := randRead
-	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
+	randRead = func(n int) ([]byte, error) { return nil, errors.New("随机源故障") }
 	defer func() { randRead = orig }()
 	mw2 := CSRFProtect("csrf", "X-CSRF-Token", WithCSRFErrorHandler(handler))
 	w2, _ := runChain(t, http.MethodGet, mw2)

@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
-	"crypto/rand"
 	"crypto/rsa"
 	"encoding/hex"
 	"errors"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lcylpzls/authx"
+	"github.com/lcylpzls/cryptox"
 	"github.com/lcylpzls/errx"
 )
 
@@ -27,7 +27,7 @@ type Claims struct {
 }
 
 // randRead 可替换的随机源，便于测试注入失败场景。
-var randRead = rand.Read
+var randRead = cryptox.RandomBytes
 
 // Signer JWT 签发与校验器。
 type Signer struct {
@@ -327,8 +327,8 @@ func classifyParseError(err error) error {
 
 // newJTI 生成 16 字节随机十六进制 jti；随机源失败返回错误，不回退弱标识。
 func newJTI() (string, error) {
-	b := make([]byte, 16)
-	if _, err := randRead(b); err != nil {
+	b, err := randRead(16)
+	if err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil

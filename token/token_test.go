@@ -248,7 +248,7 @@ func TestSignBadKeyType(t *testing.T) {
 // TestNewJTIError 覆盖随机源故障时签发失败（不回退弱标识）。
 func TestNewJTIError(t *testing.T) {
 	orig := randRead
-	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
+	randRead = func(n int) ([]byte, error) { return nil, errors.New("随机源故障") }
 	defer func() { randRead = orig }()
 	s, err := NewHS256([]byte("0123456789abcdef0123456789abcdef"))
 	testx.RequireNoError(t, err)

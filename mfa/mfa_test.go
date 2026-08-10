@@ -24,7 +24,7 @@ func TestGenerateSecret(t *testing.T) {
 		t.Fatalf("生成密钥应可解码：%v", err)
 	}
 	orig := randRead
-	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
+	randRead = func(n int) ([]byte, error) { return nil, errors.New("随机源故障") }
 	defer func() { randRead = orig }()
 	if _, err := GenerateSecret(); err == nil || !errx.Is(err, authx.CodeMFAInvalid) {
 		t.Fatalf("随机源故障应报错，实际：%v", err)
@@ -130,7 +130,7 @@ func TestRecoveryCodes(t *testing.T) {
 		}
 	}
 	orig := randRead
-	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
+	randRead = func(n int) ([]byte, error) { return nil, errors.New("随机源故障") }
 	defer func() { randRead = orig }()
 	if _, err := GenerateRecoveryCodes(2); err == nil || !errx.Is(err, authx.CodeMFAInvalid) {
 		t.Fatalf("随机源故障应报错，实际：%v", err)
@@ -415,7 +415,7 @@ func TestIssueRecoveryCodes(t *testing.T) {
 	}
 	// 生成失败。
 	orig := randRead
-	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
+	randRead = func(n int) ([]byte, error) { return nil, errors.New("随机源故障") }
 	if _, err := IssueRecoveryCodes(ctx, store, 2, time.Hour); err == nil ||
 		!errx.Is(err, authx.CodeMFAInvalid) {
 		t.Fatalf("随机源故障应报错，实际：%v", err)

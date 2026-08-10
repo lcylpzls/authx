@@ -3,12 +3,12 @@ package session
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/hex"
 	"sync"
 	"time"
 
 	"github.com/lcylpzls/authx"
+	"github.com/lcylpzls/cryptox"
 	"github.com/lcylpzls/errx"
 )
 
@@ -19,7 +19,7 @@ const (
 )
 
 // randRead 可替换的随机源，便于测试注入失败与冲突场景。
-var randRead = rand.Read
+var randRead = cryptox.RandomBytes
 
 // Session 会话数据：ID 与键值对（业务可扩展）。
 type Session struct {
@@ -207,8 +207,8 @@ func (s *MemoryStore) StartCleanup(interval time.Duration) *authx.CleanupHandle 
 
 // newSessionID 生成 32 字节随机十六进制会话 ID。
 func newSessionID() (string, error) {
-	b := make([]byte, idBytes)
-	if _, err := randRead(b); err != nil {
+	b, err := randRead(idBytes)
+	if err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil

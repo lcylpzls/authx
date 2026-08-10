@@ -39,7 +39,7 @@ func TestRefreshErrors(t *testing.T) {
 		t.Fatalf("空存储应报错，实际：%v", err)
 	}
 	orig := randRead
-	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
+	randRead = func(n int) ([]byte, error) { return nil, errors.New("随机源故障") }
 	_, err := IssueRefreshToken(ctx, store, time.Hour)
 	randRead = orig
 	if err == nil || !errx.Is(err, authx.CodeRefreshTokenInvalid) {

@@ -3,22 +3,16 @@ package mfa
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha1"
-	"crypto/sha256"
-	"crypto/sha512"
-	"crypto/subtle"
 	"encoding/base32"
 	"encoding/binary"
 	"fmt"
-	"hash"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/lcylpzls/authx"
+	"github.com/lcylpzls/cryptox"
 	"github.com/lcylpzls/errx"
 )
 
@@ -32,7 +26,7 @@ const (
 )
 
 // randRead 可替换的随机源，便于测试注入失败场景。
-var randRead = rand.Read
+var randRead = cryptox.RandomBytes
 
 // Algorithm TOTP 使用的哈希算法。
 type Algorithm uint8
@@ -75,22 +69,22 @@ func (c TOTPConfig) Validate() error {
 	return nil
 }
 
-// hashFunc 返回算法对应的哈希构造器。
-func (c TOTPConfig) hashFunc() func() hash.Hash {
+// hashName 返回算法对应的 cryptox 算法名。
+func (c TOTPConfig) hashName() string {
 	switch c.Algorithm {
 	case AlgorithmSHA256:
-		return sha256.New
+		return "SHA256"
 	case AlgorithmSHA512:
-		return sha512.New
+		return "SHA512"
 	default:
-		return sha1.New
+		return "SHA1"
 	}
 }
 
 // GenerateSecret 生成 20 字节随机密钥（base32 无填充，适合录入身份验证器）。
 func GenerateSecret() (string, error) {
-	b := make([]byte, secretBytes)
-	if _, err := randRead(b); err != nil {
+	b, err := randRead(secretBytes)
+	if err != nil {
 		return "", authx.ErrMFAInvalid
 	}
 	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b), nil
@@ -111,11 +105,10 @@ func GenerateCodeWithConfig(secret string, at time.Time, cfg TOTPConfig) (string
 		return "", err
 	}
 	counter := uint64(at.Unix()) / uint64(cfg.Period.Seconds())
-	mac := hmac.New(cfg.hashFunc(), key)
 	var buf [8]byte
 	binary.BigEndian.PutUint64(buf[:], counter)
-	_, _ = mac.Write(buf[:])
-	sum := mac.Sum(nil)
+	// 配置已校验算法，密钥非空，SignHMACWithHash 不会失败。
+	sum, _ := cryptox.SignHMACWithHash(cfg.hashName(), key, buf[:])
 	offset := sum[len(sum)-1] & 0x0f
 	code := binary.BigEndian.Uint32(sum[offset:offset+4]) & 0x7fffffff
 	mod := uint32(1)
@@ -152,7 +145,7 @@ func ValidateCodeWithConfig(secret, code string, at time.Time, skew uint, cfg TO
 		if err != nil {
 			return false, err
 		}
-		if subtle.ConstantTimeCompare([]byte(got), []byte(code)) == 1 {
+		if cryptox.ConstantTimeEquals([]byte(got), []byte(code)) {
 			return true, nil
 		}
 	}
@@ -175,8 +168,8 @@ func GenerateRecoveryCodes(count int) ([]string, error) {
 	}
 	codes := make([]string, 0, count)
 	for i := 0; i < count; i++ {
-		b := make([]byte, recoveryBytes)
-		if _, err := randRead(b); err != nil {
+		b, err := randRead(recoveryBytes)
+		if err != nil {
 			return nil, authx.ErrMFAInvalid
 		}
 		raw := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b)
@@ -195,8 +188,7 @@ func GenerateRecoveryCodes(count int) ([]string, error) {
 
 // HashRecoveryCode 计算恢复码哈希（存储用，明文不落库）。
 func HashRecoveryCode(code string) string {
-	sum := sha256.Sum256([]byte(code))
-	return fmt.Sprintf("%x", sum)
+	return fmt.Sprintf("%x", cryptox.SHA256([]byte(code)))
 }
 
 // RecoveryCodeStore 恢复码存储接口（哈希落库、消费状态，可接 Redis 等外部实现）。
@@ -364,7 +356,7 @@ func VerifyRecoveryCodeWithStore(ctx context.Context, store RecoveryCodeStore, c
 
 // VerifyRecoveryCode 常量时间校验恢复码。
 func VerifyRecoveryCode(hash, code string) bool {
-	return subtle.ConstantTimeCompare([]byte(hash), []byte(HashRecoveryCode(code))) == 1
+	return cryptox.ConstantTimeEquals([]byte(hash), []byte(HashRecoveryCode(code)))
 }
 
 // decodeSecret 解码 base32 密钥（兼容带/不带填充）。

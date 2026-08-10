@@ -2,9 +2,6 @@ package middleware
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"net/http"
@@ -13,8 +10,9 @@ import (
 
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/authx/session"
+	"github.com/lcylpzls/cryptox"
 	"github.com/lcylpzls/logx"
-	"github.com/lcylpzls/webx/v2"
+	"github.com/lcylpzls/webx"
 )
 
 const (
@@ -250,9 +248,9 @@ func signedSessionValue(id string, key []byte) string {
 	if len(key) == 0 {
 		return id
 	}
-	mac := hmac.New(sha256.New, key)
-	_, _ = mac.Write([]byte(id))
-	return id + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	// key 非空时 SignHMAC 不会失败。
+	sig, _ := cryptox.SignHMAC(key, []byte(id))
+	return id + "." + base64.RawURLEncoding.EncodeToString(sig)
 }
 
 // verifySessionCookie 校验签名并返回会话 ID；格式非法或签名不匹配返回 false。
@@ -262,10 +260,10 @@ func verifySessionCookie(value string, key []byte) (string, bool) {
 		return "", false
 	}
 	id, sig := value[:idx], value[idx+1:]
-	mac := hmac.New(sha256.New, key)
-	_, _ = mac.Write([]byte(id))
-	want := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	if subtle.ConstantTimeCompare([]byte(sig), []byte(want)) != 1 {
+	// key 非空时 SignHMAC 不会失败。
+	want, _ := cryptox.SignHMAC(key, []byte(id))
+	wantEnc := base64.RawURLEncoding.EncodeToString(want)
+	if !cryptox.ConstantTimeEquals([]byte(sig), []byte(wantEnc)) {
 		return "", false
 	}
 	return id, true

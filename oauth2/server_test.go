@@ -18,7 +18,7 @@ import (
 	"github.com/go-oauth2/oauth2/v4/store"
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/errx"
-	"github.com/lcylpzls/webx/v2"
+	"github.com/lcylpzls/webx"
 )
 
 const (

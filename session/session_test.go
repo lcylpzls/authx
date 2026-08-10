@@ -81,7 +81,7 @@ func TestCreateConflict(t *testing.T) {
 	store := NewMemoryStore(nil)
 	fixed := []byte("0123456789abcdef0123456789abcdef")
 	orig := randRead
-	randRead = func(b []byte) (int, error) { return copy(b, fixed), nil }
+	randRead = func(n int) ([]byte, error) { return append([]byte(nil), fixed...), nil }
 	defer func() { randRead = orig }()
 	if _, err := store.Create(ctx, time.Hour); err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestCreateConflict(t *testing.T) {
 // TestNewSessionIDError 覆盖随机源故障返回错误（不回退弱标识）。
 func TestNewSessionIDError(t *testing.T) {
 	orig := randRead
-	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
+	randRead = func(n int) ([]byte, error) { return nil, errors.New("随机源故障") }
 	defer func() { randRead = orig }()
 	if _, err := newSessionID(); err == nil {
 		t.Fatal("随机源故障应返回错误")
@@ -224,7 +224,7 @@ func TestRotateRandFail(t *testing.T) {
 	testx.RequireNoError(t, err)
 
 	orig := randRead
-	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
+	randRead = func(n int) ([]byte, error) { return nil, errors.New("随机源故障") }
 	defer func() { randRead = orig }()
 	if _, err := store.Rotate(ctx, sess.ID, time.Hour); err == nil ||
 		!errx.Is(err, authx.CodeSessionStoreInvalid) {
@@ -238,7 +238,7 @@ func TestRotateConflict(t *testing.T) {
 	store := NewMemoryStore(nil)
 	fixed := []byte("0123456789abcdef0123456789abcdef")
 	orig := randRead
-	randRead = func(b []byte) (int, error) { return copy(b, fixed), nil }
+	randRead = func(n int) ([]byte, error) { return append([]byte(nil), fixed...), nil }
 	defer func() { randRead = orig }()
 	sess, err := store.Create(ctx, time.Hour)
 	testx.RequireNoError(t, err)

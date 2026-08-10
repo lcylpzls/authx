@@ -3,7 +3,7 @@ package oauth2
 import (
 	"net/http"
 
-	"github.com/lcylpzls/webx/v2"
+	"github.com/lcylpzls/webx"
 )
 
 // AuthorizeWebxHandler 返回 webx 适配的 /authorize 处理器。

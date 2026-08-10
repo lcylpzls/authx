@@ -77,7 +77,7 @@ func TestHashInvalidConfig(t *testing.T) {
 // TestHashRandFailure 覆盖随机盐生成失败分支。
 func TestHashRandFailure(t *testing.T) {
 	orig := randRead
-	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
+	randRead = func(n int) ([]byte, error) { return nil, errors.New("随机源故障") }
 	defer func() { randRead = orig }()
 	_, err := Hash("password123", authx.DefaultPasswordConfig())
 	if err == nil || !errx.Is(err, authx.CodePasswordInternal) {

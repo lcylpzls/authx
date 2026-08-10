@@ -2,6 +2,31 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+## [v1.6.0] - 2026-08-10
+
+### 变更
+
+- 加密能力统一迁移至 `cryptox`：
+  - password：Argon2id 派生改用 `cryptox.Argon2ID`，盐生成改用
+    `cryptox.RandomBytes`，比较改用 `cryptox.ConstantTimeEquals`；
+  - mfa：TOTP HMAC（SHA1/SHA256/SHA512）改用
+    `cryptox.SignHMACWithHash`，密钥/恢复码随机数、恢复码哈希与
+    常量时间比较全部走 cryptox；
+  - session / middleware：会话 ID、CSRF 令牌随机数与 HMAC-SHA256
+    会话签名、常量时间比较全部走 cryptox；
+  - token：jti / 刷新令牌随机数改用 `cryptox.RandomBytes`，
+    刷新令牌哈希改用 `cryptox.SHA256`；
+  - JWT 的 RSA / ECDSA / Ed25519 签名仍由 golang-jwt 负责，
+    密钥类型为公开 API 表面，不再直接引用 `crypto/rand`、
+    `crypto/sha*`、`crypto/subtle`、`crypto/hmac` 与 `x/crypto/argon2`。
+- webx 依赖从 `webx/v2` 迁移到无后缀 `webx v1.3.0`（全家族永久
+  不采用 `/vN` 模块路径）。
+
+### 质量
+
+- 全部库包语句覆盖率保持 100%；race / vet / staticcheck /
+  govulncheck 全绿。
+
 ## [v1.5.0] - 2026-08-10
 
 ### 新增

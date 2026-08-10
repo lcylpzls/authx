@@ -2,12 +2,12 @@ package token
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"time"
 
 	"github.com/lcylpzls/authx"
+	"github.com/lcylpzls/cryptox"
 	"github.com/lcylpzls/errx"
 )
 
@@ -20,8 +20,8 @@ func IssueRefreshToken(ctx context.Context, store RefreshStore, ttl time.Duratio
 	if store == nil {
 		return "", errx.New(errx.KindInvalid, authx.CodeRefreshTokenInvalid, "刷新令牌存储不能为空")
 	}
-	raw := make([]byte, refreshTokenBytes)
-	if _, err := randRead(raw); err != nil {
+	raw, err := randRead(refreshTokenBytes)
+	if err != nil {
 		return "", errx.Wrap(err, errx.KindUnavailable, authx.CodeRefreshTokenInvalid, "刷新令牌生成失败")
 	}
 	token = base64.RawURLEncoding.EncodeToString(raw)
@@ -98,6 +98,5 @@ func startTrace(ctx context.Context, name, op string, c *traceConfig) (context.C
 
 // HashRefreshToken 计算刷新令牌哈希（存储与查询使用，明文不落库）。
 func HashRefreshToken(raw string) string {
-	sum := sha256.Sum256([]byte(raw))
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(cryptox.SHA256([]byte(raw)))
 }

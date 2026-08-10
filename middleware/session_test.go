@@ -13,7 +13,7 @@ import (
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/authx/session"
 	"github.com/lcylpzls/logx"
-	"github.com/lcylpzls/webx/v2"
+	"github.com/lcylpzls/webx"
 )
 
 // TestSessionPanics 覆盖会话中间件 panic 分支。

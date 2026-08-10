@@ -2,8 +2,6 @@
 package middleware
 
 import (
-	"crypto/rand"
-	"crypto/subtle"
 	"encoding/base64"
 	"net/http"
 	"net/url"
@@ -13,8 +11,9 @@ import (
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/authx/rbac"
 	"github.com/lcylpzls/authx/token"
+	"github.com/lcylpzls/cryptox"
 	"github.com/lcylpzls/errx"
-	"github.com/lcylpzls/webx/v2"
+	"github.com/lcylpzls/webx"
 )
 
 const (
@@ -28,7 +27,7 @@ const (
 )
 
 // randRead 可替换的随机源，便于测试注入失败场景。
-var randRead = rand.Read
+var randRead = cryptox.RandomBytes
 
 // ErrorResponse 中间件统一 JSON 错误响应体（errx 语义）。
 type ErrorResponse struct {
@@ -255,8 +254,8 @@ func WithCSRFAllowedOrigins(origins ...string) CSRFOption {
 
 // GenerateCSRFToken 生成 32 字节随机 base64url 令牌。
 func GenerateCSRFToken() (string, error) {
-	b := make([]byte, csrfTokenBytes)
-	if _, err := randRead(b); err != nil {
+	b, err := randRead(csrfTokenBytes)
+	if err != nil {
 		return "", errx.WrapCode(err, authx.CodeCSRFGenerationFailed, "CSRF 令牌生成失败")
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
@@ -268,7 +267,7 @@ func ValidateCSRFToken(cookie, header string) bool {
 		len(cookie) > maxCSRFTokenLength || len(header) > maxCSRFTokenLength {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(cookie), []byte(header)) == 1
+	return cryptox.ConstantTimeEquals([]byte(cookie), []byte(header))
 }
 
 // CSRFProtect 构造双提交 Cookie 中间件：安全方法放行并保证已种令牌，

@@ -2,16 +2,14 @@
 package password
 
 import (
-	"crypto/rand"
-	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/lcylpzls/authx"
+	"github.com/lcylpzls/cryptox"
 	"github.com/lcylpzls/errx"
-	"golang.org/x/crypto/argon2"
 )
 
 const (
@@ -100,7 +98,7 @@ func (c StrengthConfig) Check(plain string) error {
 }
 
 // randRead 可替换的随机源，便于测试注入失败场景。
-var randRead = rand.Read
+var randRead = cryptox.RandomBytes
 
 // Hash 使用 Argon2id 派生密钥并返回标准编码的哈希串。
 // 格式：$argon2id$v=19$m=<内存>,t=<时间>,p=<并行>$<盐 base64>$<密钥 base64>
@@ -124,15 +122,17 @@ func hashWithStrength(plain string, cfg authx.PasswordConfig, strength StrengthC
 	if err := cfg.Validate(); err != nil {
 		return "", err
 	}
-	salt := make([]byte, cfg.SaltLength)
-	if _, err := randRead(salt); err != nil {
+	salt, err := randRead(cfg.SaltLength)
+	if err != nil {
 		return "", errx.WrapCode(err, authx.CodePasswordInternal, "随机盐生成失败")
 	}
-	key := argon2.IDKey([]byte(plain), salt, cfg.Iterations, cfg.Memory, cfg.Parallelism, cfg.KeyLength)
+	// cfg.Validate 已保证参数合法，Argon2ID 不会失败。
+	key, _ := cryptox.Argon2ID(
+		[]byte(plain), salt, cfg.Memory, cfg.Iterations, cfg.Parallelism, cfg.KeyLength)
 	enc := base64.RawStdEncoding
 	return fmt.Sprintf(
 		"$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
-		argon2.Version, cfg.Memory, cfg.Iterations, cfg.Parallelism,
+		cryptox.Argon2Version, cfg.Memory, cfg.Iterations, cfg.Parallelism,
 		enc.EncodeToString(salt), enc.EncodeToString(key),
 	), nil
 }
@@ -147,8 +147,10 @@ func Verify(hash, plain string) (bool, error) {
 	if len(plain) > maxPlainLength {
 		return false, authx.ErrPasswordTooLong
 	}
-	other := argon2.IDKey([]byte(plain), salt, par.iterations, par.memory, par.parallelism, uint32(len(key)))
-	return subtle.ConstantTimeCompare(key, other) == 1, nil
+	// parseHash 已保证参数合法，Argon2ID 不会失败。
+	other, _ := cryptox.Argon2ID(
+		[]byte(plain), salt, par.memory, par.iterations, par.parallelism, uint32(len(key)))
+	return cryptox.ConstantTimeEquals(key, other), nil
 }
 
 // NeedsRehash 判断哈希参数是否落后于当前配置，用于登录时惰性迁移。
@@ -177,7 +179,7 @@ func parseHash(hash string) (params, []byte, []byte, error) {
 	if len(parts) != 6 || parts[0] != "" || parts[1] != "argon2id" {
 		return zero, nil, nil, wrapHashInvalid("哈希必须以 $argon2id$v=19$... 格式编码")
 	}
-	if parts[2] != "v="+strconv.Itoa(argon2.Version) {
+	if parts[2] != "v="+strconv.Itoa(cryptox.Argon2Version) {
 		return zero, nil, nil, wrapHashInvalid("不支持的 Argon2 版本")
 	}
 	par, err := parseParams(parts[3])

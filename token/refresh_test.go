@@ -3,6 +3,7 @@ package token
 import (
 	"context"
 	"errors"
+	testx "github.com/lcylpzls/testx"
 	"testing"
 	"time"
 
@@ -15,9 +16,8 @@ func TestIssueValidateConsume(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryRefreshStore(nil)
 	raw, err := IssueRefreshToken(ctx, store, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	ok, err := ValidateRefreshToken(ctx, store, raw)
 	if err != nil || !ok {
 		t.Fatalf("刷新令牌应有效：ok=%v err=%v", ok, err)
@@ -100,16 +100,13 @@ func TestRotateRefreshToken(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryRefreshStore(nil)
 	oldRaw, err := IssueRefreshToken(ctx, store, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	newRaw, err := RotateRefreshToken(ctx, store, oldRaw, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if newRaw == oldRaw {
-		t.Fatal("轮换后令牌不应相同")
-	}
+	testx.RequireNoError(t, err)
+
+	testx.RequireNotEqual(t, newRaw, oldRaw)
+
 	ok, err := ValidateRefreshToken(ctx, store, oldRaw)
 	if err != nil || ok {
 		t.Fatalf("旧令牌应失效：ok=%v err=%v", ok, err)

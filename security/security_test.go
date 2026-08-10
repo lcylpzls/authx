@@ -1,6 +1,7 @@
 package security
 
 import (
+	testx "github.com/lcylpzls/testx"
 	"testing"
 	"time"
 
@@ -30,9 +31,8 @@ func TestNewErrors(t *testing.T) {
 func TestRecordFailure(t *testing.T) {
 	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
 	g, err := NewLoginGuard(3, 5*time.Minute, WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if g.RecordFailure("u-1") {
 		t.Fatal("首次失败不应锁定")
 	}
@@ -54,9 +54,8 @@ func TestRecordFailure(t *testing.T) {
 func TestIsLockedExpire(t *testing.T) {
 	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
 	g, err := NewLoginGuard(2, time.Minute, WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	_ = g.RecordFailure("u-1")
 	_ = g.RecordFailure("u-1")
 	if !g.IsLocked("u-1") {
@@ -72,9 +71,8 @@ func TestIsLockedExpire(t *testing.T) {
 func TestReset(t *testing.T) {
 	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
 	g, err := NewLoginGuard(2, time.Minute, WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	_ = g.RecordFailure("u-1")
 	g.Reset("u-1")
 	if g.IsLocked("u-1") {
@@ -90,9 +88,8 @@ func TestWindowSliding(t *testing.T) {
 	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
 	g, err := NewLoginGuard(3, time.Minute, WithFailureWindow(5*time.Minute),
 		WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	_ = g.RecordFailure("u-1")
 	_ = g.RecordFailure("u-1")
 	now = now.Add(6 * time.Minute)
@@ -111,9 +108,8 @@ func TestCleanup(t *testing.T) {
 	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
 	g, err := NewLoginGuard(2, time.Minute, WithFailureWindow(5*time.Minute),
 		WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	_ = g.RecordFailure("u-locked")
 	_ = g.RecordFailure("u-locked")
 	_ = g.RecordFailure("u-failures")
@@ -131,9 +127,8 @@ func TestCleanupPartial(t *testing.T) {
 	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
 	g, err := NewLoginGuard(10, time.Minute, WithFailureWindow(5*time.Minute),
 		WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	_ = g.RecordFailure("u-mixed")
 	_ = g.RecordFailure("u-mixed")
 	now = now.Add(6 * time.Minute)
@@ -161,9 +156,8 @@ func TestMaxEntriesFull(t *testing.T) {
 	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
 	g, err := NewLoginGuard(3, time.Minute, WithMaxEntries(2),
 		WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	_ = g.RecordFailure("a")
 	_ = g.RecordFailure("b")
 	if g.RecordFailure("c") {
@@ -182,9 +176,8 @@ func TestMaxEntriesFull(t *testing.T) {
 func TestLoginGuardStartCleanup(t *testing.T) {
 	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
 	g, err := NewLoginGuard(2, time.Minute, WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	_ = g.RecordFailure("u-1")
 	_ = g.RecordFailure("u-1")
 	if !g.IsLocked("u-1") {

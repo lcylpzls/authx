@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	testx "github.com/lcylpzls/testx"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -34,9 +35,8 @@ func newTestOAuthServer(t *testing.T) *http.ServeMux {
 		ClientSecret: testClientSecret,
 		RedirectURL:  testRedirect,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	s.SetUserAuthorizationHandlerFromContext()
 	mux := http.NewServeMux()
 	mux.Handle("/authorize", s.AuthorizeHandler())
@@ -92,9 +92,8 @@ func TestServerStores(t *testing.T) {
 	}
 	// 注入 go-oauth2 自带内存实现。
 	memTokens, err := store.NewMemoryTokenStore()
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := NewServer(ServerConfig{ClientID: testClientID, RedirectURL: testRedirect},
 		WithClientStore(store.NewClientStore()),
 		WithTokenStore(memTokens)); err != nil {
@@ -104,9 +103,8 @@ func TestServerStores(t *testing.T) {
 	rec := &recordingClientStore{}
 	s2, err := NewServer(ServerConfig{ClientID: testClientID, RedirectURL: testRedirect},
 		WithClientStore(rec))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	cli, err := s2.manager.GetClient(context.Background(), "custom")
 	if err != nil || !rec.called || cli.GetID() != "custom" {
 		t.Fatalf("自定义客户端存储未生效：cli=%v err=%v called=%v", cli, err, rec.called)
@@ -127,13 +125,11 @@ func TestAuthorizationCodePKCEFlow(t *testing.T) {
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	resp := w.Result()
-	if resp.StatusCode != http.StatusFound {
-		t.Fatalf("授权应 302：%d", resp.StatusCode)
-	}
+	testx.RequireEqual(t, resp.StatusCode, http.StatusFound)
+
 	loc, err := url.Parse(resp.Header.Get("Location"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	code := loc.Query().Get("code")
 	if code == "" || loc.Query().Get("state") != "xyz" {
 		t.Fatalf("回调参数不符：%s", resp.Header.Get("Location"))
@@ -173,9 +169,8 @@ func exchange(t *testing.T, mux http.Handler, form url.Values) map[string]any {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("令牌请求应 200：%d body=%s", w.Code, w.Body.String())
-	}
+	testx.RequireEqual(t, w.Code, http.StatusOK)
+
 	var out map[string]any
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 		t.Fatalf("令牌响应解析失败：%v body=%s", err, w.Body.String())
@@ -194,9 +189,8 @@ func TestOAuthErrors(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, base, nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("未登录授权应 401：%d", w.Code)
-	}
+	testx.RequireEqual(t, w.Code, http.StatusUnauthorized)
+
 	// 非法 client_id → 302 重定向错误（OAuth2 规范）。
 	req2 := httptest.NewRequest(http.MethodGet, strings.Replace(base, testClientID, "bad", 1), nil)
 	req2 = req2.WithContext(WithUserID(req2.Context(), "u-1"))
@@ -243,9 +237,8 @@ func TestWebxHandlers(t *testing.T) {
 		ClientSecret: testClientSecret,
 		RedirectURL:  testRedirect,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	s.SetUserAuthorizationHandlerFromContext()
 	verifier := "test-verifier-0123456789abcdef"
 	authURL := "/authorize?response_type=code&client_id=" + testClientID +
@@ -257,9 +250,8 @@ func TestWebxHandlers(t *testing.T) {
 	c := webx.NewContext(w, req)
 	c.SetHandlers([]webx.HandlerFunc{s.AuthorizeWebxHandler()})
 	c.Run()
-	if w.Code != http.StatusFound {
-		t.Fatalf("webx 授权应 302：%d", w.Code)
-	}
+	testx.RequireEqual(t, w.Code, http.StatusFound)
+
 	loc, _ := url.Parse(w.Header().Get("Location"))
 	code := loc.Query().Get("code")
 	form := url.Values{
@@ -285,9 +277,8 @@ func TestWebxHandlers(t *testing.T) {
 	c3 := webx.NewContext(w3, req3)
 	c3.SetHandlers([]webx.HandlerFunc{s.AuthorizeWebxHandler()})
 	c3.Run()
-	if w3.Code != http.StatusUnauthorized {
-		t.Fatalf("webx 未登录授权应 401：%d", w3.Code)
-	}
+	testx.RequireEqual(t, w3.Code, http.StatusUnauthorized)
+
 }
 
 // TestCustomUserHandler 覆盖自定义用户解析器。
@@ -297,16 +288,14 @@ func TestCustomUserHandler(t *testing.T) {
 		ClientSecret: testClientSecret,
 		RedirectURL:  testRedirect,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	s.SetUserAuthorizationHandler(func(r *http.Request) (string, error) { return "u-custom", nil })
 	authURL := "/authorize?response_type=code&client_id=" + testClientID +
 		"&redirect_uri=" + url.QueryEscape(testRedirect) + "&state=cs"
 	req := httptest.NewRequest(http.MethodGet, authURL, nil)
 	w := httptest.NewRecorder()
 	s.AuthorizeHandler().ServeHTTP(w, req)
-	if w.Code != http.StatusFound {
-		t.Fatalf("自定义解析器授权应 302：%d", w.Code)
-	}
+	testx.RequireEqual(t, w.Code, http.StatusFound)
+
 }

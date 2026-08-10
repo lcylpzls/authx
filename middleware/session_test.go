@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	testx "github.com/lcylpzls/testx"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -65,15 +66,13 @@ func TestSessionFlow(t *testing.T) {
 	c2.SetHandlers([]webx.HandlerFunc{mw, func(c *webx.Context) {
 		handled = true
 		s, _ := SessionFrom(c)
-		if s.ID != sid {
-			t.Fatalf("应复用已有会话：%q", s.ID)
-		}
+		testx.RequireEqual(t, s.ID, sid)
+
 		s.Values["k"] = "v"
 	}})
 	c2.Run()
-	if !handled {
-		t.Fatal("已有会话应放行")
-	}
+	testx.RequireTrue(t, handled)
+
 	// 请求结束后自动保存（验证 Values 落库）。
 	got, err := store.Get(context.Background(), sid)
 	if err != nil || got.Values["k"] != "v" {
@@ -304,9 +303,8 @@ func TestSessionClock(t *testing.T) {
 	// nil 时钟回退到 time.Now，不应 panic。
 	mwNil := Session(store, "sid", WithSessionClock(nil), WithSessionSecure(false))
 	w2, _ := runChain(t, http.MethodGet, mwNil)
-	if w2.Code != http.StatusOK {
-		t.Fatalf("nil 时钟回退应正常放行：%d", w2.Code)
-	}
+	testx.RequireEqual(t, w2.Code, http.StatusOK)
+
 }
 
 // TestSessionErrorHandler 覆盖会话自定义错误处理器。
@@ -370,9 +368,8 @@ func TestSessionSigning(t *testing.T) {
 		reused = s.ID == id
 	}})
 	c2.Run()
-	if !reused {
-		t.Fatal("有效签名 Cookie 应复用会话")
-	}
+	testx.RequireTrue(t, reused)
+
 	// 篡改签名 → 视为无会话，新建并重新种 Cookie。
 	req3 := httptest.NewRequest(http.MethodGet, "/ping", nil)
 	req3.AddCookie(&http.Cookie{Name: "sid", Value: id + ".tampered"})
@@ -380,9 +377,8 @@ func TestSessionSigning(t *testing.T) {
 	c3 := webx.NewContext(w3, req3)
 	c3.SetHandlers([]webx.HandlerFunc{mw})
 	c3.Run()
-	if w3.Code != http.StatusOK {
-		t.Fatalf("篡改签名应重建会话：%d", w3.Code)
-	}
+	testx.RequireEqual(t, w3.Code, http.StatusOK)
+
 	if _, err := store.Get(context.Background(), id); err != nil {
 		t.Fatal("原会话不应受影响")
 	}
@@ -442,9 +438,8 @@ func TestRotateSessionSigned(t *testing.T) {
 			rotated = ck
 		}
 	}
-	if rotated == nil {
-		t.Fatalf("缺少轮换 Cookie：%+v", cookies)
-	}
+	testx.RequireNotNil(t, rotated)
+
 	id, ok := verifySessionCookie(rotated.Value, key)
 	if !ok || id != newID {
 		t.Fatalf("轮换后签名应匹配新 ID：id=%q ok=%v new=%q", id, ok, newID)
@@ -463,9 +458,8 @@ func TestSessionCookieTooLong(t *testing.T) {
 	handled := false
 	c.SetHandlers([]webx.HandlerFunc{mw, func(c *webx.Context) { handled = true }})
 	c.Run()
-	if !handled {
-		t.Fatal("超长 Cookie 应重建会话并放行")
-	}
+	testx.RequireTrue(t, handled)
+
 	// 不应以超长值查询存储（存储中不存在该键）。
 	if _, err := store.Get(context.Background(), long); err == nil {
 		t.Fatal("存储不应存在超长键")

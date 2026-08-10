@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	testx "github.com/lcylpzls/testx"
 	"testing"
 	"time"
 )
@@ -23,9 +24,8 @@ func BenchmarkStoreGet(b *testing.B) {
 	store := NewMemoryStore(nil)
 	ctx := context.Background()
 	sess, err := store.Create(ctx, time.Hour)
-	if err != nil {
-		b.Fatal(err)
-	}
+	testx.RequireNoError(b, err)
+
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

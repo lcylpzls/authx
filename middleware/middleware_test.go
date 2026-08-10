@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"errors"
+	testx "github.com/lcylpzls/testx"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,9 +20,8 @@ import (
 func newSigner(t *testing.T) *token.Signer {
 	t.Helper()
 	s, err := token.NewHS256([]byte("0123456789abcdef0123456789abcdef"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	return s
 }
 
@@ -72,9 +72,8 @@ func TestAuth(t *testing.T) {
 	}
 	// 有效令牌。
 	raw, err := s.Sign("u-1001", token.WithRoles("admin"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	handled = false
 	req3 := httptest.NewRequest(http.MethodGet, "/ping", nil)
 	req3.Header.Set("Authorization", "Bearer "+raw)
@@ -134,9 +133,8 @@ func TestRequirePermissionFlow(t *testing.T) {
 	handled := false
 	// 无认证 → 401。
 	w, _ := runChain(t, http.MethodGet, perm, func(c *webx.Context) { handled = true })
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("未认证应 401：%d", w.Code)
-	}
+	testx.RequireEqual(t, w.Code, http.StatusUnauthorized)
+
 	// 有权限 → 放行。
 	raw, _ := s.Sign("u-1", token.WithRoles("admin"))
 	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
@@ -173,9 +171,8 @@ func TestRequireRole(t *testing.T) {
 	handled := false
 	// 无认证 → 401。
 	w, _ := runChain(t, http.MethodGet, roleMW, func(c *webx.Context) { handled = true })
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("未认证应 401：%d", w.Code)
-	}
+	testx.RequireEqual(t, w.Code, http.StatusUnauthorized)
+
 	// 命中角色 → 放行。
 	raw, _ := s.Sign("u-1", token.WithRoles("admin"))
 	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
@@ -333,9 +330,8 @@ func TestCSRFProtect(t *testing.T) {
 	handled = false
 	cSafe.SetHandlers([]webx.HandlerFunc{mw, func(c *webx.Context) { handled = true }})
 	cSafe.Run()
-	if !handled {
-		t.Fatal("安全方法应放行")
-	}
+	testx.RequireTrue(t, handled)
+
 	// 非安全方法匹配 → 放行。
 	reqOK := httptest.NewRequest(http.MethodPost, "/ping", nil)
 	reqOK.AddCookie(&http.Cookie{Name: "csrf", Value: token})
@@ -380,9 +376,8 @@ func TestCSRFProtectGenerationFailure(t *testing.T) {
 	defer func() { randRead = orig }()
 	mw := CSRFProtect("csrf", "X-CSRF-Token")
 	w, _ := runChain(t, http.MethodGet, mw)
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("生成失败应 500，实际 %d", w.Code)
-	}
+	testx.RequireEqual(t, w.Code, http.StatusInternalServerError)
+
 }
 
 // TestCSRFProtectPanics 覆盖 CSRFProtect 配置 panic。
@@ -408,9 +403,8 @@ func TestCSRFAllowedOrigins(t *testing.T) {
 	mw := CSRFProtect("csrf", "X-CSRF-Token",
 		WithCSRFAllowedOrigins("https://app.example.com"), WithCSRFSecure(false))
 	token, err := GenerateCSRFToken()
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	run := func(origin, referer string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/ping", nil)
 		req.AddCookie(&http.Cookie{Name: "csrf", Value: token})
@@ -460,9 +454,8 @@ func TestCSRFAllowedOrigins(t *testing.T) {
 	c := webx.NewContext(w, req)
 	c.SetHandlers([]webx.HandlerFunc{mwPlain})
 	c.Run()
-	if w.Code != http.StatusOK {
-		t.Fatalf("未配置来源应跳过校验：%d", w.Code)
-	}
+	testx.RequireEqual(t, w.Code, http.StatusOK)
+
 }
 
 // TestCSRFClockOption 覆盖注入时钟与 nil 回退。
@@ -478,9 +471,8 @@ func TestCSRFClockOption(t *testing.T) {
 	// nil 时钟回退到 time.Now，不应 panic。
 	mwNil := CSRFProtect("csrf", "X-CSRF-Token", WithCSRFClock(nil), WithCSRFSecure(false))
 	w2, _ := runChain(t, http.MethodGet, mwNil)
-	if w2.Code != http.StatusOK {
-		t.Fatalf("nil 时钟回退应正常放行：%d", w2.Code)
-	}
+	testx.RequireEqual(t, w2.Code, http.StatusOK)
+
 }
 
 // TestErrorResponseFrom 覆盖错误响应体提取。
@@ -504,9 +496,8 @@ func TestErrorResponseFrom(t *testing.T) {
 func TestDefaultErrorHandler(t *testing.T) {
 	w, c := runChain(t, http.MethodGet)
 	DefaultErrorHandler(c, http.StatusForbidden, authx.ErrForbidden)
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("状态码不符：%d", w.Code)
-	}
+	testx.RequireEqual(t, w.Code, http.StatusForbidden)
+
 	body := w.Body.String()
 	if !strings.Contains(body, `"authx_forbidden"`) || !strings.Contains(body, `"forbidden"`) {
 		t.Fatalf("响应应含结构化错误：%s", body)

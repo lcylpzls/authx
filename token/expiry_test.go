@@ -2,6 +2,7 @@ package token
 
 import (
 	"context"
+	testx "github.com/lcylpzls/testx"
 	"testing"
 	"time"
 
@@ -16,19 +17,16 @@ func TestTokenExpiryBoundary(t *testing.T) {
 	now := base
 	issuer, err := NewHS256(secret, WithTTL(time.Hour),
 		WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	raw, err := issuer.Sign("u-1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	// 到期前 1ns 仍有效。
 	now = base.Add(time.Hour - time.Nanosecond)
 	verifier, err := NewHS256(secret, WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := verifier.Parse(raw); err != nil {
 		t.Fatalf("到期前 1ns 应有效：%v", err)
 	}

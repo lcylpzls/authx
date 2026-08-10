@@ -3,6 +3,7 @@ package mfa
 import (
 	"context"
 	"errors"
+	testx "github.com/lcylpzls/testx"
 	"strings"
 	"testing"
 	"time"
@@ -14,9 +15,8 @@ import (
 // TestGenerateSecret 覆盖密钥生成。
 func TestGenerateSecret(t *testing.T) {
 	secret, err := GenerateSecret()
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if len(secret) != 32 {
 		t.Fatalf("20 字节 base32 应为 32 字符：%d", len(secret))
 	}
@@ -112,9 +112,8 @@ func TestRecoveryCodes(t *testing.T) {
 		t.Fatalf("超上限数量应报错，实际：%v", err)
 	}
 	codes, err := GenerateRecoveryCodes(3)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if len(codes) != 3 {
 		t.Fatalf("数量应为 3：%d", len(codes))
 	}
@@ -369,9 +368,8 @@ func TestMemoryRecoveryCodeStoreStartCleanup(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		ok, err := store.Validate(ctx, "h")
-		if err != nil {
-			t.Fatal(err)
-		}
+		testx.RequireNoError(t, err)
+
 		if !ok {
 			break
 		}
@@ -448,9 +446,8 @@ func TestVerifyRecoveryCodeWithStore(t *testing.T) {
 		t.Fatalf("空码应报错，实际：%v", err)
 	}
 	codes, err := IssueRecoveryCodes(ctx, store, 2, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	ok, err := VerifyRecoveryCodeWithStore(ctx, store, codes[0], false)
 	if err != nil || !ok {
 		t.Fatalf("不消费校验应通过：ok=%v err=%v", ok, err)

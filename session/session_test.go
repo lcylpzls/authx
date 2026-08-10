@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	testx "github.com/lcylpzls/testx"
 	"testing"
 	"time"
 
@@ -19,17 +20,15 @@ func TestMemoryStore(t *testing.T) {
 		t.Fatalf("零 TTL 应报错，实际：%v", err)
 	}
 	sess, err := store.Create(ctx, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if sess.ID == "" || len(sess.ID) != 64 {
 		t.Fatalf("会话 ID 异常：%q", sess.ID)
 	}
 	sess.Values["k"] = "v"
 	got, err := store.Get(ctx, sess.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if got.Values["k"] != "" {
 		t.Fatal("Get 应返回存储副本，外部修改不应影响")
 	}
@@ -48,9 +47,8 @@ func TestMemoryStore(t *testing.T) {
 		t.Fatalf("空 ID 应报错，实际：%v", err)
 	}
 	expired, err := store.Create(ctx, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	now = now.Add(2 * time.Hour)
 	if _, err := store.Get(ctx, expired.ID); err == nil || !errx.Is(err, authx.CodeSessionNotFound) {
 		t.Fatalf("过期会话应报错，实际：%v", err)
@@ -68,9 +66,8 @@ func TestMemoryStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	old, err := store.Create(ctx, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	_ = old
 	now = now.Add(2 * time.Hour)
 	if n := store.Cleanup(); n != 2 {
@@ -114,9 +111,8 @@ func TestDefaultClock(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore(nil)
 	sess, err := store.Create(ctx, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := store.Get(ctx, sess.ID); err != nil {
 		t.Fatalf("默认时间源读取失败：%v", err)
 	}
@@ -159,9 +155,8 @@ func TestMemoryStoreStartCleanup(t *testing.T) {
 	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(func() time.Time { return now })
 	sess, err := store.Create(ctx, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	now = now.Add(2 * time.Hour)
 	h := store.StartCleanup(10 * time.Millisecond)
 	defer h.Stop()
@@ -192,17 +187,15 @@ func TestRotate(t *testing.T) {
 		t.Fatalf("不存在应报错，实际：%v", err)
 	}
 	old, err := store.Create(ctx, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	old.Values["k"] = "v"
 	if err := store.Save(ctx, old, time.Hour); err != nil {
 		t.Fatal(err)
 	}
 	rotated, err := store.Rotate(ctx, old.ID, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if rotated.ID == old.ID || rotated.Values["k"] != "v" {
 		t.Fatalf("轮换应保留值并更换 ID：%+v", rotated)
 	}
@@ -215,9 +208,8 @@ func TestRotate(t *testing.T) {
 	}
 	// 过期会话轮换。
 	expired, err := store.Create(ctx, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	now = now.Add(2 * time.Hour)
 	if _, err := store.Rotate(ctx, expired.ID, time.Hour); err == nil || !errx.Is(err, authx.CodeSessionNotFound) {
 		t.Fatalf("过期会话应报错，实际：%v", err)
@@ -229,9 +221,8 @@ func TestRotateRandFail(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore(nil)
 	sess, err := store.Create(ctx, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	orig := randRead
 	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
 	defer func() { randRead = orig }()
@@ -250,9 +241,8 @@ func TestRotateConflict(t *testing.T) {
 	randRead = func(b []byte) (int, error) { return copy(b, fixed), nil }
 	defer func() { randRead = orig }()
 	sess, err := store.Create(ctx, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := store.Rotate(ctx, sess.ID, time.Hour); err == nil ||
 		!errx.Is(err, authx.CodeSessionStoreInvalid) {
 		t.Fatalf("冲突耗尽应报错，实际：%v", err)

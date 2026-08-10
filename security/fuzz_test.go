@@ -1,6 +1,7 @@
 package security
 
 import (
+	testx "github.com/lcylpzls/testx"
 	"strings"
 	"testing"
 	"time"
@@ -14,9 +15,8 @@ func FuzzLoginGuard(f *testing.F) {
 			t.Skip("输入过大")
 		}
 		g, err := NewLoginGuard(3, time.Minute, WithFailureWindow(time.Minute))
-		if err != nil {
-			t.Fatal(err)
-		}
+		testx.RequireNoError(t, err)
+
 		for _, op := range strings.Split(string(data), ";") {
 			switch {
 			case strings.HasPrefix(op, "fail:"):

@@ -1,6 +1,7 @@
 package password
 
 import (
+	testx "github.com/lcylpzls/testx"
 	"testing"
 
 	"github.com/lcylpzls/authx"
@@ -19,9 +20,8 @@ func BenchmarkHash(b *testing.B) {
 func BenchmarkVerify(b *testing.B) {
 	cfg := authx.DefaultPasswordConfig()
 	h, err := Hash("password123", cfg)
-	if err != nil {
-		b.Fatal(err)
-	}
+	testx.RequireNoError(b, err)
+
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

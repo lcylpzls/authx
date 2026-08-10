@@ -1,6 +1,7 @@
 package token
 
 import (
+	testx "github.com/lcylpzls/testx"
 	"testing"
 )
 
@@ -8,13 +9,11 @@ import (
 func FuzzParse(f *testing.F) {
 	secret := []byte("0123456789abcdef0123456789abcdef")
 	s, err := NewHS256(secret)
-	if err != nil {
-		f.Fatal(err)
-	}
+	testx.RequireNoError(f, err)
+
 	raw, err := s.Sign("u-1")
-	if err != nil {
-		f.Fatal(err)
-	}
+	testx.RequireNoError(f, err)
+
 	f.Add(raw)
 	f.Add("")
 	f.Add("not-a-jwt")

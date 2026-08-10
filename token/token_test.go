@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"errors"
+	testx "github.com/lcylpzls/testx"
 	"strings"
 	"testing"
 	"time"
@@ -21,17 +22,14 @@ import (
 func testKey(t *testing.T) ([]byte, *rsa.PrivateKey, *ecdsa.PrivateKey, ed25519.PrivateKey) {
 	t.Helper()
 	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	_, edKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	return []byte("0123456789abcdef0123456789abcdef"), rsaKey, ecKey, edKey
 }
 
@@ -57,9 +55,8 @@ func TestConstructors(t *testing.T) {
 		t.Fatalf("错误长度 Ed25519 密钥应报错，实际：%v", err)
 	}
 	s, err := New(jwt.SigningMethodHS256, secret)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if s.ttl != 15*time.Minute {
 		t.Fatalf("默认有效期应为 15 分钟：%v", s.ttl)
 	}
@@ -95,17 +92,14 @@ func TestSignParseHS256(t *testing.T) {
 	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
 	s, err := NewHS256(secret, WithIssuer("myapp"), WithAudience("web", "api"),
 		WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	raw, err := s.Sign("u-1001", WithRoles("admin"), WithPermissions("order:read", "order:write"), WithTokenTTL(time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	claims, err := s.Parse(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if claims.Subject != "u-1001" || claims.ID == "" || len(claims.Roles) != 1 ||
 		len(claims.Permissions) != 2 || claims.Issuer != "myapp" {
 		t.Fatalf("载荷不符：%+v", claims)
@@ -124,13 +118,11 @@ func TestParseErrors(t *testing.T) {
 	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
 	s, err := NewHS256(secret, WithIssuer("myapp"), WithAudience("web"),
 		WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	good, err := s.Sign("u-1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	// 篡改签名。
 	tampered := good[:len(good)-4] + "AAAA"
 	if _, err := s.Parse(tampered); !errx.Is(err, authx.CodeTokenSignature) {
@@ -143,38 +135,32 @@ func TestParseErrors(t *testing.T) {
 	// 过期。
 	expiredSigner, err := NewHS256(secret, WithTTL(time.Minute),
 		WithClock(func() time.Time { return now.Add(-2 * time.Minute) }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	expired, err := expiredSigner.Sign("u-1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := s.Parse(expired); !errx.Is(err, authx.CodeTokenExpired) {
 		t.Fatalf("过期令牌应报过期，实际：%v", err)
 	}
 	// 签发方不匹配。
 	otherIssuer, err := NewHS256(secret, WithIssuer("other"), WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	other, err := otherIssuer.Sign("u-1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := s.Parse(other); err == nil || !errx.Is(err, authx.CodeTokenInvalid) {
 		t.Fatalf("签发方不匹配应报校验失败，实际：%v", err)
 	}
 	// 算法不匹配。
 	algOther, err := NewHS256(secret, WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	algOther.method = jwt.SigningMethodHS512
 	algToken, err := algOther.Sign("u-1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := s.Parse(algToken); !errx.Is(err, authx.CodeTokenSignature) {
 		t.Fatalf("算法不匹配应报签名错误，实际：%v", err)
 	}
@@ -195,17 +181,14 @@ func TestParseRevoked(t *testing.T) {
 	clock := func() time.Time { return now }
 	revokedStore := NewMemoryRevocationStore(clock)
 	s, err := NewHS256(secret, WithClock(clock), WithRevocationStore(revokedStore))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	raw, err := s.Sign("u-1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	claims, err := s.Parse(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if err := revokedStore.Revoke(context.Background(), claims.ID, time.Hour); err != nil {
 		t.Fatal(err)
 	}
@@ -214,13 +197,11 @@ func TestParseRevoked(t *testing.T) {
 	}
 	failStore := failingRevocationStore{err: errors.New("存储故障")}
 	sf, err := NewHS256(secret, WithClock(clock), WithRevocationStore(failStore))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	raw2, err := sf.Sign("u-2")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := sf.Parse(raw2); !errx.Is(err, authx.CodeStoreInvalid) {
 		t.Fatalf("撤销查询失败应报存储错误，实际：%v", err)
 	}
@@ -231,26 +212,22 @@ func TestNonHSAlgorithms(t *testing.T) {
 	_, rsaKey, ecKey, edKey := testKey(t)
 	now := func() time.Time { return time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC) }
 	rsSigner, err := NewRS256(rsaKey, WithClock(now))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	ecSigner, err := NewES256(ecKey, WithClock(now))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	edSigner, err := NewEdDSA(edKey, WithClock(now))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	for name, signer := range map[string]*Signer{
 		"rs256": rsSigner,
 		"es256": ecSigner,
 		"eddsa": edSigner,
 	} {
 		raw, err := signer.Sign("u-1")
-		if err != nil {
-			t.Fatalf("%s 签发失败：%v", name, err)
-		}
+		testx.RequireNoError(t, err)
+
 		claims, err := signer.Parse(raw)
 		if err != nil || claims.Subject != "u-1" {
 			t.Fatalf("%s 解析失败：claims=%+v err=%v", name, claims, err)
@@ -261,9 +238,8 @@ func TestNonHSAlgorithms(t *testing.T) {
 // TestSignBadKeyType 覆盖签名密钥类型不匹配分支。
 func TestSignBadKeyType(t *testing.T) {
 	s, err := New(jwt.SigningMethodHS256, "not-a-key")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := s.Sign("u-1"); err == nil || !errx.Is(err, authx.CodeTokenInvalid) {
 		t.Fatalf("密钥类型不匹配应报签发失败，实际：%v", err)
 	}
@@ -275,9 +251,8 @@ func TestNewJTIError(t *testing.T) {
 	randRead = func(b []byte) (int, error) { return 0, errors.New("随机源故障") }
 	defer func() { randRead = orig }()
 	s, err := NewHS256([]byte("0123456789abcdef0123456789abcdef"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := s.Sign("u-1"); err == nil || !errx.Is(err, authx.CodeTokenInvalid) {
 		t.Fatalf("随机源故障时签发应失败，实际：%v", err)
 	}
@@ -293,28 +268,24 @@ func TestWithLeeway(t *testing.T) {
 	}
 	issuer, err := NewHS256(secret, WithTTL(time.Minute),
 		WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	raw, err := issuer.Sign("u-1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	// 校验端时钟快 90 秒，容差 2 分钟 → 通过。
 	lenient, err := NewHS256(secret, WithLeeway(2*time.Minute),
 		WithClock(func() time.Time { return now.Add(90 * time.Second) }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := lenient.Parse(raw); err != nil {
 		t.Fatalf("容差内应通过：%v", err)
 	}
 	// 容差仅 10 秒 → 过期。
 	strict, err := NewHS256(secret, WithLeeway(10*time.Second),
 		WithClock(func() time.Time { return now.Add(90 * time.Second) }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := strict.Parse(raw); !errx.Is(err, authx.CodeTokenExpired) {
 		t.Fatalf("超出容差应报过期，实际：%v", err)
 	}
@@ -337,26 +308,21 @@ func TestKIDRotation(t *testing.T) {
 	oldSecret := []byte("0123456789abcdef0123456789abcdef")
 	newSecret := []byte("fedcba9876543210fedcba9876543210")
 	oldSigner, err := NewHS256(oldSecret, WithKID("key-1"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	newSigner, err := NewHS256(newSecret, WithKID("key-2"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	verifier, err := NewHS256(oldSecret, WithKID("key-1"),
 		WithVerificationKeys(map[string]any{"key-1": oldSecret, "key-2": newSecret}))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	oldToken, err := oldSigner.Sign("u-1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	newToken, err := newSigner.Sign("u-1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := verifier.Parse(oldToken); err != nil {
 		t.Fatalf("旧密钥令牌应可验证：%v", err)
 	}
@@ -365,21 +331,18 @@ func TestKIDRotation(t *testing.T) {
 	}
 	// 未登记 kid 的令牌应拒绝。
 	plainSigner, err := NewHS256([]byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	unknown, err := plainSigner.Sign("u-1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := verifier.Parse(unknown); !errx.Is(err, authx.CodeTokenSignature) {
 		t.Fatalf("未登记密钥应报签名错误，实际：%v", err)
 	}
 	// 未启用验证表时 kid 不匹配应拒绝。
 	strictVerifier, err := NewHS256(oldSecret, WithKID("key-1"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := strictVerifier.Parse(newToken); !errx.Is(err, authx.CodeTokenSignature) {
 		t.Fatalf("kid 不匹配应报签名错误，实际：%v", err)
 	}

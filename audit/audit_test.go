@@ -2,6 +2,7 @@ package audit
 
 import (
 	"bytes"
+	testx "github.com/lcylpzls/testx"
 	"strings"
 	"testing"
 	"time"
@@ -22,9 +23,8 @@ func TestNewPanics(t *testing.T) {
 // TestAddHookPanic 覆盖空钩子 panic。
 func TestAddHookPanic(t *testing.T) {
 	logger, err := logx.NewBuilder().EnableWriter(bytes.NewBuffer(nil), logx.InfoLevel).Build()
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	a := New(logger)
 	defer func() {
 		if recover() == nil {
@@ -38,9 +38,8 @@ func TestAddHookPanic(t *testing.T) {
 func TestRecord(t *testing.T) {
 	var buf bytes.Buffer
 	logger, err := logx.NewBuilder().EnableWriter(&buf, logx.InfoLevel).Build()
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	a := New(logger)
 	got := make(chan Event, 1)
 	a.AddHook(func(e Event) { got <- e })
@@ -67,9 +66,8 @@ func TestRecord(t *testing.T) {
 func TestRecordTruncate(t *testing.T) {
 	var buf bytes.Buffer
 	logger, err := logx.NewBuilder().EnableWriter(&buf, logx.InfoLevel).Build()
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	a := New(logger)
 	got := make(chan Event, 1)
 	a.AddHook(func(e Event) { got <- e })
@@ -79,18 +77,16 @@ func TestRecordTruncate(t *testing.T) {
 	if len(e.Subject) != maxFieldLength {
 		t.Fatalf("超长字段应截断到上限：%d", len(e.Subject))
 	}
-	if e.Result != ResultSuccess {
-		t.Fatalf("非法结果应归一为 success：%q", e.Result)
-	}
+	testx.RequireEqual(t, e.Result, ResultSuccess)
+
 }
 
 // TestHookPanicRecover 覆盖钩子 panic 恢复。
 func TestHookPanicRecover(t *testing.T) {
 	var buf bytes.Buffer
 	logger, err := logx.NewBuilder().EnableWriter(&buf, logx.InfoLevel).Build()
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	a := New(logger)
 	a.AddHook(func(Event) { panic("钩子故障") })
 	a.Record(Event{Action: "login"}) // 不应 panic。

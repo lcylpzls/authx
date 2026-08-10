@@ -2,6 +2,7 @@ package oauth2
 
 import (
 	"context"
+	testx "github.com/lcylpzls/testx"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -82,9 +83,8 @@ func testClient(t *testing.T, base string, withUserInfo bool) *Client {
 		cfg.UserInfoURL = base + "/userinfo"
 	}
 	c, err := NewClient(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	return c
 }
 
@@ -109,9 +109,8 @@ func TestAuthCodeURLs(t *testing.T) {
 	c := testClient(t, srv.URL, false)
 	u := c.AuthCodeURL("state-1")
 	parsed, err := url.Parse(u)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	q := parsed.Query()
 	if q.Get("client_id") != "web" || q.Get("state") != "state-1" ||
 		!strings.Contains(q.Get("redirect_uri"), "/cb") {
@@ -164,9 +163,8 @@ func TestUserInfo(t *testing.T) {
 	defer srv.Close()
 	c := testClient(t, base, true)
 	info, err := c.UserInfo(context.Background(), &xoauth2.Token{AccessToken: "at-1"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if info["sub"] != "u-1" || info["name"] != "张三" {
 		t.Fatalf("用户信息不符：%v", info)
 	}
@@ -223,11 +221,9 @@ func TestOAuthClient(t *testing.T) {
 	c := testClient(t, base, false)
 	hc := c.Client(context.Background(), &xoauth2.Token{AccessToken: "at-1"})
 	resp, err := hc.Get(base + "/userinfo")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("资源端点应 200：%d", resp.StatusCode)
-	}
+	testx.RequireEqual(t, resp.StatusCode, http.StatusOK)
+
 }

@@ -1,12 +1,13 @@
 module github.com/lcylpzls/authx
 
-go 1.26.0
+go 1.26.5
 
 require (
 	github.com/go-oauth2/oauth2/v4 v4.5.4
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/lcylpzls/errx v1.3.1
+	github.com/lcylpzls/errx v1.4.0
 	github.com/lcylpzls/logx v1.0.0
+	github.com/lcylpzls/testx v1.2.0
 	github.com/lcylpzls/webx/v2 v2.0.1
 	golang.org/x/crypto v0.54.0
 	golang.org/x/oauth2 v0.36.0

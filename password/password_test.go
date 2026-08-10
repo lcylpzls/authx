@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	testx "github.com/lcylpzls/testx"
 	"strings"
 	"testing"
 
@@ -16,9 +17,8 @@ import (
 // TestHashAndVerify 覆盖哈希与校验主流程。
 func TestHashAndVerify(t *testing.T) {
 	h, err := Hash("password123", authx.DefaultPasswordConfig())
-	if err != nil {
-		t.Fatalf("Hash 失败：%v", err)
-	}
+	testx.RequireNoError(t, err)
+
 	ok, err := Verify(h, "password123")
 	if err != nil || !ok {
 		t.Fatalf("正确明文应校验通过：ok=%v err=%v", ok, err)
@@ -32,16 +32,13 @@ func TestHashAndVerify(t *testing.T) {
 // TestHashSaltRandom 覆盖盐随机性：相同明文两次哈希结果不同。
 func TestHashSaltRandom(t *testing.T) {
 	a, err := Hash("password123", authx.DefaultPasswordConfig())
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	b, err := Hash("password123", authx.DefaultPasswordConfig())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a == b {
-		t.Fatal("两次哈希结果不应相同（盐必须随机）")
-	}
+	testx.RequireNoError(t, err)
+
+	testx.RequireNotEqual(t, a, b)
+
 }
 
 // TestHashLengthBounds 覆盖明文长度上下限。
@@ -93,9 +90,8 @@ func TestHashRandFailure(t *testing.T) {
 func TestVerifyKnownVector(t *testing.T) {
 	salt := []byte("somesalt")
 	key, err := hex.DecodeString("068d62b26455936aa6ebe60060b0a65870dbfa3ddf8d41f7")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	enc := base64.RawStdEncoding
 	h := fmt.Sprintf("$argon2id$v=19$m=64,t=2,p=1$%s$%s",
 		enc.EncodeToString(salt), enc.EncodeToString(key))
@@ -145,9 +141,8 @@ func TestVerifyHashFormatErrors(t *testing.T) {
 // TestVerifyTooLongPlain 覆盖校验阶段明文超长分支。
 func TestVerifyTooLongPlain(t *testing.T) {
 	h, err := Hash("password123", authx.DefaultPasswordConfig())
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := Verify(h, strings.Repeat("a", 1025)); !errors.Is(err, authx.ErrPasswordTooLong) {
 		t.Fatalf("超长明文应报过长，实际：%v", err)
 	}
@@ -157,9 +152,8 @@ func TestVerifyTooLongPlain(t *testing.T) {
 func TestNeedsRehash(t *testing.T) {
 	cfg := authx.DefaultPasswordConfig()
 	h, err := Hash("password123", cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	need, err := NeedsRehash(h, cfg)
 	if err != nil || need {
 		t.Fatalf("相同参数不应需要迁移：need=%v err=%v", need, err)
@@ -252,9 +246,8 @@ func TestHashWithStrength(t *testing.T) {
 	cfg := authx.DefaultPasswordConfig()
 	h, err := HashWithStrength("Abcdef1234!", cfg, StrengthConfig{RequireUpper: true, RequireLower: true,
 		RequireDigit: true, RequireSymbol: true})
-	if err != nil {
-		t.Fatalf("满足策略应成功：%v", err)
-	}
+	testx.RequireNoError(t, err)
+
 	ok, err := Verify(h, "Abcdef1234!")
 	if err != nil || !ok {
 		t.Fatalf("校验应通过：ok=%v err=%v", ok, err)

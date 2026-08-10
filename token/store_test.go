@@ -2,6 +2,7 @@ package token
 
 import (
 	"context"
+	testx "github.com/lcylpzls/testx"
 	"testing"
 	"time"
 
@@ -155,9 +156,8 @@ func TestMemoryRefreshStoreStartCleanup(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		ok, err := store.Validate(ctx, "h")
-		if err != nil {
-			t.Fatal(err)
-		}
+		testx.RequireNoError(t, err)
+
 		if !ok {
 			break // 已清理。
 		}
@@ -210,9 +210,8 @@ func TestMemoryRevocationStoreStartCleanup(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		revoked, err := store.IsRevoked(ctx, "j")
-		if err != nil {
-			t.Fatal(err)
-		}
+		testx.RequireNoError(t, err)
+
 		if !revoked {
 			break // 已清理。
 		}

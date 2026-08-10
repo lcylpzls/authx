@@ -1,6 +1,7 @@
 package security
 
 import (
+	testx "github.com/lcylpzls/testx"
 	"testing"
 	"time"
 )
@@ -10,9 +11,8 @@ func TestLockExpiryBoundary(t *testing.T) {
 	base := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
 	now := base
 	g, err := NewLoginGuard(2, 5*time.Minute, WithClock(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	_ = g.RecordFailure("u-1")
 	_ = g.RecordFailure("u-1")
 	if !g.IsLocked("u-1") {

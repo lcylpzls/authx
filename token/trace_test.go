@@ -2,6 +2,7 @@ package token
 
 import (
 	"context"
+	testx "github.com/lcylpzls/testx"
 	"sync"
 	"testing"
 	"time"
@@ -52,9 +53,8 @@ func TestTraceHook(t *testing.T) {
 	store := NewMemoryRefreshStore(time.Now)
 	ctx := context.Background()
 	raw, err := IssueRefreshToken(ctx, store, time.Minute, WithTraceHook(hook))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	if _, err := ValidateRefreshToken(ctx, store, raw, WithTraceHook(hook)); err != nil {
 		t.Fatal(err)
 	}

@@ -3,6 +3,7 @@ package audit
 import (
 	"bytes"
 	"errors"
+	testx "github.com/lcylpzls/testx"
 	"testing"
 	"time"
 
@@ -46,9 +47,8 @@ func TestNewAsyncAuditorErrors(t *testing.T) {
 // TestAsyncAuditorDrain 覆盖停止前全部事件落库。
 func TestAsyncAuditorDrain(t *testing.T) {
 	a, err := NewAsyncAuditor(testAsyncLogger(), 64, WithFlushInterval(time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	got := make(chan string, 8)
 	a.AddHook(func(e Event) { got <- e.Action })
 	for i := 0; i < 5; i++ {
@@ -61,9 +61,8 @@ func TestAsyncAuditorDrain(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		select {
 		case action := <-got:
-			if action != "login" {
-				t.Fatalf("动作不符：%q", action)
-			}
+			testx.RequireEqual(t, action, "login")
+
 		case <-time.After(2 * time.Second):
 			t.Fatalf("停止后应有 %d 条事件落库，实际 %d", 5, i)
 		}
@@ -73,9 +72,8 @@ func TestAsyncAuditorDrain(t *testing.T) {
 // TestAsyncAuditorBatch 覆盖批量冲刷。
 func TestAsyncAuditorBatch(t *testing.T) {
 	a, err := NewAsyncAuditor(testAsyncLogger(), 16, WithBatchSize(2), WithFlushInterval(time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	defer a.Stop()
 	got := make(chan Event, 4)
 	a.AddHook(func(e Event) { got <- e })
@@ -100,9 +98,8 @@ func TestAsyncAuditorBatch(t *testing.T) {
 // TestAsyncAuditorTimer 覆盖定时冲刷。
 func TestAsyncAuditorTimer(t *testing.T) {
 	a, err := NewAsyncAuditor(testAsyncLogger(), 16, WithFlushInterval(20*time.Millisecond))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	defer a.Stop()
 	got := make(chan Event, 1)
 	a.AddHook(func(e Event) { got <- e })
@@ -111,9 +108,8 @@ func TestAsyncAuditorTimer(t *testing.T) {
 	}
 	select {
 	case e := <-got:
-		if e.Action != "login" {
-			t.Fatalf("定时冲刷事件不符：%q", e.Action)
-		}
+		testx.RequireEqual(t, e.Action, "login")
+
 	case <-time.After(2 * time.Second):
 		t.Fatal("定时冲刷未生效")
 	}
@@ -122,9 +118,8 @@ func TestAsyncAuditorTimer(t *testing.T) {
 // TestAsyncAuditorDrop 覆盖队列满丢弃策略。
 func TestAsyncAuditorDrop(t *testing.T) {
 	a, err := NewAsyncAuditor(testAsyncLogger(), 1, WithBatchSize(1), WithFlushInterval(time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	defer a.Stop()
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -149,9 +144,8 @@ func TestAsyncAuditorDrop(t *testing.T) {
 func TestAsyncAuditorBlock(t *testing.T) {
 	a, err := NewAsyncAuditor(testAsyncLogger(), 1, WithBatchSize(1), WithDropPolicy(Block),
 		WithFlushInterval(time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testx.RequireNoError(t, err)
+
 	started := make(chan struct{})
 	release := make(chan struct{})
 	a.AddHook(func(Event) { close(started); <-release })
@@ -172,9 +166,8 @@ func TestAsyncAuditorBlock(t *testing.T) {
 	close(release)
 	select {
 	case err := <-done:
-		if err != nil {
-			t.Fatalf("阻塞后应成功入队：%v", err)
-		}
+		testx.RequireNoError(t, err)
+
 	case <-time.After(2 * time.Second):
 		t.Fatal("阻塞未解除")
 	}

@@ -12,7 +12,7 @@ import (
 	"github.com/lcylpzls/authx/rbac"
 	"github.com/lcylpzls/authx/token"
 	"github.com/lcylpzls/errx"
-	"github.com/lcylpzls/webx"
+	"github.com/lcylpzls/webx/v2"
 )
 
 // newSigner 构造测试签发器。

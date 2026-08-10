@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/lcylpzls/authx/mfa"
-	"github.com/lcylpzls/webx"
+	"github.com/lcylpzls/webx/v2"
 )
 
 // TestRun 验证演示应用可完整装配。

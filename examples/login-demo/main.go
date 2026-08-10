@@ -19,7 +19,7 @@ import (
 	"github.com/lcylpzls/authx/session"
 	"github.com/lcylpzls/authx/token"
 	"github.com/lcylpzls/logx"
-	"github.com/lcylpzls/webx"
+	"github.com/lcylpzls/webx/v2"
 )
 
 const (

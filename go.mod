@@ -5,13 +5,13 @@ go 1.26.5
 require (
 	github.com/go-oauth2/oauth2/v4 v4.5.4
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/lcylpzls/cryptox v0.6.7
-	github.com/lcylpzls/errx v1.4.0
-	github.com/lcylpzls/idgenx v1.3.0
-	github.com/lcylpzls/logx v1.1.0
-	github.com/lcylpzls/testx v1.2.1
+	github.com/lcylpzls/cryptox v1.0.0
+	github.com/lcylpzls/errx v1.5.4
+	github.com/lcylpzls/idgenx v1.4.0
+	github.com/lcylpzls/logx v1.3.0
+	github.com/lcylpzls/testx v1.4.1
 	github.com/lcylpzls/validx v1.2.2
-	github.com/lcylpzls/webx v1.4.0
+	github.com/lcylpzls/webx v1.5.2
 	golang.org/x/oauth2 v0.36.0
 )
 
@@ -19,6 +19,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/lcylpzls/confx v0.3.1 // indirect
+	github.com/lcylpzls/resiliencex v1.3.0 // indirect
 	github.com/magiconair/properties v1.18.11 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.61.0 // indirect

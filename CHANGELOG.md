@@ -2,7 +2,7 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
-## [v2.2.0] - 2026-08-10
+## [v1.5.0] - 2026-08-10
 
 ### 新增
 
@@ -10,6 +10,12 @@
   token 子包 issue / validate / rotate / consume 操作结束时触发
   `AuthEvent`，由 eventx 等外部适配器接入；
 - `token.WithEventHook` 选项注入，与 TraceHook 同位置调用。
+
+### 说明
+
+- 曾尝试迁移模块路径至 `/v2`，因连带 webx v1/v2 版本混乱而回滚；
+  **v2.x tag 弃用**，本功能以 v1.5.0 发布（模块路径保持
+  `github.com/lcylpzls/authx`）。
 
 ### 质量
 

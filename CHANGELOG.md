@@ -2,6 +2,20 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+## [v2.2.0] - 2026-08-10
+
+### 新增
+
+- `EventHook` 认证事件钩子（零依赖可选接口，默认 no-op）：
+  token 子包 issue / validate / rotate / consume 操作结束时触发
+  `AuthEvent`，由 eventx 等外部适配器接入；
+- `token.WithEventHook` 选项注入，与 TraceHook 同位置调用。
+
+### 质量
+
+- 核心子包覆盖率均 100%；race / vet / staticcheck / fuzz /
+  govulncheck 全绿。
+
 ## [v2.1.1] - 2026-08-10
 
 ### 变更

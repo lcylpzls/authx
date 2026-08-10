@@ -81,10 +81,19 @@ func RotateRefreshToken(ctx context.Context, store RefreshStore, oldRaw string, 
 
 // startTrace 开始令牌操作链路（无钩子时 no-op）。
 func startTrace(ctx context.Context, name, op string, c *traceConfig) (context.Context, func(error)) {
-	if c.traceHook == nil {
+	if c.traceHook == nil && c.eventHook == nil {
 		return ctx, func(error) {}
 	}
-	return c.traceHook.Start(ctx, name, authx.TraceAttr{Key: "authx.operation", Value: op})
+	traceEnd := func(error) {}
+	if c.traceHook != nil {
+		ctx, traceEnd = c.traceHook.Start(ctx, name, authx.TraceAttr{Key: "authx.operation", Value: op})
+	}
+	return ctx, func(err error) {
+		traceEnd(err)
+		if c.eventHook != nil {
+			c.eventHook.OnAuthEvent(ctx, authx.AuthEvent{Action: op, Err: err})
+		}
+	}
 }
 
 // HashRefreshToken 计算刷新令牌哈希（存储与查询使用，明文不落库）。

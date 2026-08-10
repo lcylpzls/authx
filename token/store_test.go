@@ -127,9 +127,7 @@ func TestMemoryRefreshStoreWithLimit(t *testing.T) {
 	if err := store.Save(ctx, "h3", time.Hour); err == nil || !errx.Is(err, authx.CodeStoreFull) {
 		t.Fatalf("容量已满应报错，实际：%v", err)
 	}
-	if err := store.Save(ctx, "h1", time.Hour); err != nil {
-		t.Fatalf("更新已有条目不应受上限影响：%v", err)
-	}
+	testx.RequireNoError(t, store.Save(ctx, "h1", time.Hour))
 }
 
 // TestMemoryRefreshStoreLimitPanic 覆盖非法上限 panic。
@@ -181,9 +179,7 @@ func TestMemoryRevocationStoreWithLimit(t *testing.T) {
 	if err := store.Revoke(ctx, "j3", time.Hour); err == nil || !errx.Is(err, authx.CodeStoreFull) {
 		t.Fatalf("容量已满应报错，实际：%v", err)
 	}
-	if err := store.Revoke(ctx, "j1", time.Hour); err != nil {
-		t.Fatalf("更新已有条目不应受上限影响：%v", err)
-	}
+	testx.RequireNoError(t, store.Revoke(ctx, "j1", time.Hour))
 }
 
 // TestMemoryRevocationStoreLimitPanic 覆盖非法上限 panic。

@@ -2,22 +2,20 @@ package oauth2
 
 import (
 	"context"
+	"github.com/lcylpzls/testx"
 	"testing"
 )
 
 // TestUserIDContext 覆盖登录态上下文传播。
 func TestUserIDContext(t *testing.T) {
 	ctx := context.Background()
-	if _, ok := UserIDFromContext(ctx); ok {
-		t.Fatal("空上下文不应有用户")
-	}
+	_, ok := UserIDFromContext(ctx)
+	testx.RequireFalse(t, ok)
 	ctx = WithUserID(ctx, "u-1")
 	id, ok := UserIDFromContext(ctx)
-	if !ok || id != "u-1" {
-		t.Fatalf("用户 ID 不符：%q %v", id, ok)
-	}
+	testx.RequireTrue(t, ok)
+	testx.RequireEqual(t, id, "u-1")
 	ctx = WithUserID(ctx, "")
-	if _, ok := UserIDFromContext(ctx); ok {
-		t.Fatal("空用户 ID 不应通过")
-	}
+	_, ok = UserIDFromContext(ctx)
+	testx.RequireFalse(t, ok)
 }

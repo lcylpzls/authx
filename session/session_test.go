@@ -133,9 +133,7 @@ func TestMemoryStoreWithLimit(t *testing.T) {
 	if _, err := store.Create(ctx, time.Hour); err == nil || !errx.Is(err, authx.CodeStoreFull) {
 		t.Fatalf("容量已满创建应报错，实际：%v", err)
 	}
-	if err := store.Save(ctx, Session{ID: "a", Values: map[string]string{"k": "v"}}, time.Hour); err != nil {
-		t.Fatalf("更新已有会话不应受上限影响：%v", err)
-	}
+	testx.RequireNoError(t, store.Save(ctx, Session{ID: "a", Values: map[string]string{"k": "v"}}, time.Hour))
 }
 
 // TestMemoryStoreLimitPanic 覆盖非法上限 panic。

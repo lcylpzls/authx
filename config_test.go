@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/lcylpzls/errx"
+	"github.com/lcylpzls/testx"
 )
 
 // TestDefaultPasswordConfig 覆盖默认参数。
@@ -17,9 +18,7 @@ func TestDefaultPasswordConfig(t *testing.T) {
 
 // TestValidate 覆盖合法与全部分支的非法参数。
 func TestValidate(t *testing.T) {
-	if err := DefaultPasswordConfig().Validate(); err != nil {
-		t.Fatalf("默认配置应合法：%v", err)
-	}
+	testx.RequireNoError(t, DefaultPasswordConfig().Validate())
 	bad := []PasswordConfig{
 		{Memory: 8191, Iterations: 2, Parallelism: 1, KeyLength: 32, SaltLength: 16},
 		{Memory: 19456, Iterations: 0, Parallelism: 1, KeyLength: 32, SaltLength: 16},

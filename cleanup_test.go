@@ -1,6 +1,7 @@
 package authx
 
 import (
+	"github.com/lcylpzls/testx"
 	"sync"
 	"testing"
 	"time"
@@ -30,9 +31,7 @@ func TestStartCleanup(t *testing.T) {
 	mu.Lock()
 	got := count
 	mu.Unlock()
-	if got < 2 {
-		t.Fatalf("触发次数应不少于 2，实际 %d", got)
-	}
+	testx.RequireTrue(t, got >= 2)
 }
 
 // TestStartCleanupInvalidInterval 覆盖非法周期 panic。

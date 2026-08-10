@@ -187,9 +187,7 @@ func TestRotateSessionFlow(t *testing.T) {
 		s, _ := SessionFrom(c)
 		sid = s.ID
 		s.Values["k"] = "v"
-		if err := RotateSession(c); err != nil {
-			t.Fatalf("轮换失败：%v", err)
-		}
+		testx.RequireNoError(t, RotateSession(c))
 	})
 	_ = c
 	// 旧会话已被轮换删除，新会话保留值。

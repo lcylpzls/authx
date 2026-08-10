@@ -69,9 +69,7 @@ func TestHashInvalidConfig(t *testing.T) {
 			t.Fatalf("用例 %d 应报参数非法，实际：%v", i, err)
 		}
 	}
-	if err := authx.DefaultPasswordConfig().Validate(); err != nil {
-		t.Fatalf("默认配置应合法：%v", err)
-	}
+	testx.RequireNoError(t, authx.DefaultPasswordConfig().Validate())
 }
 
 // TestHashRandFailure 覆盖随机盐生成失败分支。
@@ -200,12 +198,8 @@ func TestStrengthConfigValidate(t *testing.T) {
 		}
 	}
 	var zero StrengthConfig
-	if err := zero.Validate(); err != nil {
-		t.Fatalf("零值策略应合法：%v", err)
-	}
-	if err := (StrengthConfig{MinLength: 12, MaxLength: 20}).Validate(); err != nil {
-		t.Fatalf("合法策略应通过：%v", err)
-	}
+	testx.RequireNoError(t, zero.Validate())
+	testx.RequireNoError(t, (StrengthConfig{MinLength: 12, MaxLength: 20}).Validate())
 }
 
 // TestStrengthCheck 覆盖强度规则各分支。
@@ -218,9 +212,7 @@ func TestStrengthCheck(t *testing.T) {
 		RequireDigit:  true,
 		RequireSymbol: true,
 	}
-	if err := all.Check("Abcdef1234!"); err != nil {
-		t.Fatalf("满足全部规则应通过：%v", err)
-	}
+	testx.RequireNoError(t, all.Check("Abcdef1234!"))
 	if err := all.Check("Abcdef1!"); err == nil || !errx.Is(err, authx.CodePasswordTooShort) {
 		t.Fatalf("过短应报错：%v", err)
 	}

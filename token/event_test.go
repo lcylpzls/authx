@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lcylpzls/authx"
+	"github.com/lcylpzls/testx"
 )
 
 func TestEventHook(t *testing.T) {
@@ -17,18 +18,14 @@ func TestEventHook(t *testing.T) {
 
 	raw, err := IssueRefreshToken(ctx, store, time.Minute,
 		WithEventHook(hook), WithTraceHook(nil))
-	if err != nil {
-		t.Fatalf("Issue 失败：%v", err)
-	}
+	testx.RequireNoError(t, err)
 	if _, err := ValidateRefreshToken(ctx, store, raw, WithEventHook(hook)); err != nil {
 		t.Fatalf("Validate 失败：%v", err)
 	}
 	if _, err := RotateRefreshToken(ctx, store, raw, time.Minute, WithEventHook(hook)); err != nil {
 		t.Fatalf("Rotate 失败：%v", err)
 	}
-	if err := ConsumeRefreshToken(ctx, store, raw, WithEventHook(hook)); err != nil {
-		t.Fatalf("Consume 失败：%v", err)
-	}
+	testx.RequireNoError(t, ConsumeRefreshToken(ctx, store, raw, WithEventHook(hook)))
 	if _, err := ValidateRefreshToken(ctx, store, "", WithEventHook(hook)); err == nil {
 		t.Fatal("空令牌应校验失败")
 	}

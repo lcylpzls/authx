@@ -5,40 +5,26 @@ import (
 
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/errx"
+	"github.com/lcylpzls/testx"
 )
 
 // TestAddRole 覆盖添加角色分支。
 func TestAddRole(t *testing.T) {
 	r := New()
-	if err := r.AddRole(""); err == nil || !errx.Is(err, authx.CodeRBACInvalid) {
-		t.Fatalf("空角色名应报错，实际：%v", err)
-	}
-	if err := r.AddRole("admin", "user:read", ""); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.AddRole("admin"); err == nil || !errx.Is(err, authx.CodeRBACRoleExists) {
-		t.Fatalf("重复角色应报错，实际：%v", err)
-	}
-	if !r.RoleExists("admin") || r.RoleExists("ghost") {
-		t.Fatal("RoleExists 判断错误")
-	}
+	testx.RequireErrCode(t, r.AddRole(""), authx.CodeRBACInvalid)
+	testx.RequireNoError(t, r.AddRole("admin", "user:read", ""))
+	testx.RequireErrCode(t, r.AddRole("admin"), authx.CodeRBACRoleExists)
+	testx.RequireTrue(t, r.RoleExists("admin"))
+	testx.RequireFalse(t, r.RoleExists("ghost"))
 }
 
 // TestAddPermission 覆盖追加权限分支。
 func TestAddPermission(t *testing.T) {
 	r := New()
-	if err := r.AddPermission("ghost", "x"); err == nil || !errx.Is(err, authx.CodeRBACRoleNotFound) {
-		t.Fatalf("不存在角色应报错，实际：%v", err)
-	}
-	if err := r.AddRole("admin"); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.AddPermission("admin", "order:read", ""); err != nil {
-		t.Fatal(err)
-	}
-	if !r.HasPermission("admin", "order:read") {
-		t.Fatal("权限应已追加")
-	}
+	testx.RequireErrCode(t, r.AddPermission("ghost", "x"), authx.CodeRBACRoleNotFound)
+	testx.RequireNoError(t, r.AddRole("admin"))
+	testx.RequireNoError(t, r.AddPermission("admin", "order:read", ""))
+	testx.RequireTrue(t, r.HasPermission("admin", "order:read"))
 }
 
 // TestInherit 覆盖继承与环检测。

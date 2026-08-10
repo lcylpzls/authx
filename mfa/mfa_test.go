@@ -118,9 +118,7 @@ func TestRecoveryCodes(t *testing.T) {
 		t.Fatalf("数量应为 3：%d", len(codes))
 	}
 	for _, code := range codes {
-		if !strings.Contains(code, "-") {
-			t.Fatalf("恢复码应按组分隔：%q", code)
-		}
+		testx.RequireTrue(t, strings.Contains(code, "-"))
 		hash := HashRecoveryCode(code)
 		if !VerifyRecoveryCode(hash, code) {
 			t.Fatal("正确恢复码应通过")
@@ -167,9 +165,7 @@ func TestHashRecoveryCode(t *testing.T) {
 
 // TestTOTPConfigValidate 覆盖 TOTP 配置校验分支。
 func TestTOTPConfigValidate(t *testing.T) {
-	if err := DefaultTOTPConfig().Validate(); err != nil {
-		t.Fatalf("默认配置应合法：%v", err)
-	}
+	testx.RequireNoError(t, DefaultTOTPConfig().Validate())
 	for _, cfg := range []TOTPConfig{
 		{Algorithm: Algorithm(99), Digits: 6, Period: defaultPeriod},
 		{Algorithm: AlgorithmSHA1, Digits: 5, Period: defaultPeriod},
@@ -339,9 +335,7 @@ func TestMemoryRecoveryCodeStoreLimit(t *testing.T) {
 	if err := store.Save(ctx, "h2", time.Hour); err == nil || !errx.Is(err, authx.CodeStoreFull) {
 		t.Fatalf("容量已满应报错，实际：%v", err)
 	}
-	if err := store.Save(ctx, "h1", time.Hour); err != nil {
-		t.Fatalf("更新已有不应受上限影响：%v", err)
-	}
+	testx.RequireNoError(t, store.Save(ctx, "h1", time.Hour))
 	ok, err := store.Validate(ctx, "h1")
 	if err != nil || !ok {
 		t.Fatalf("默认时钟读取失败：ok=%v err=%v", ok, err)

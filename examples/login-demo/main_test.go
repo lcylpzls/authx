@@ -15,9 +15,7 @@ import (
 
 // TestRun 验证演示应用可完整装配。
 func TestRun(t *testing.T) {
-	if err := run(); err != nil {
-		t.Fatalf("示例装配失败：%v", err)
-	}
+	testx.RequireNoError(t, run())
 }
 
 // runChain 在内存中执行路由处理器链。

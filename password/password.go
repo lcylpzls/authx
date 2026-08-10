@@ -10,6 +10,7 @@ import (
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/cryptox"
 	"github.com/lcylpzls/errx"
+	"github.com/lcylpzls/validx"
 )
 
 const (
@@ -21,6 +22,97 @@ const (
 	maxSaltLength    = 1024
 	maxDerivedKeyLen = 4096
 )
+
+// init 注册密码强度策略校验规则到 validx 全局规则表，错误码保持 authx 语义。
+func init() {
+	_ = validx.RegisterRule("authx_strength_config", func(value any, param, path string) error {
+		// 内部调用保证 value 为 StrengthConfig。
+		c := value.(StrengthConfig)
+		if c.MinLength < 0 || c.MaxLength < 0 {
+			return errx.NewCode(authx.CodePasswordConfigInvalid, "强度策略长度不能为负")
+		}
+		if c.MinLength > 0 && c.MinLength < minPlainLength {
+			return errx.NewCode(authx.CodePasswordConfigInvalid, "强度策略最小长度不能低于默认下限")
+		}
+		if c.MaxLength > 0 && c.MaxLength < minPlainLength {
+			return errx.NewCode(authx.CodePasswordConfigInvalid, "强度策略最大长度不能低于默认下限")
+		}
+		if c.MinLength > 0 && c.MaxLength > 0 && c.MinLength > c.MaxLength {
+			return errx.NewCode(authx.CodePasswordConfigInvalid, "强度策略最小长度不能大于最大长度")
+		}
+		return nil
+	})
+	_ = validx.RegisterRule("authx_strength_check", func(value any, param, path string) error {
+		// 内部调用保证 value 为明文、param 为强度策略编码。
+		plain := value.(string)
+		parts := strings.Split(param, "|")
+		min, _ := strconv.Atoi(parts[0])
+		max, _ := strconv.Atoi(parts[1])
+		requireUpper := parts[2] == "1"
+		requireLower := parts[3] == "1"
+		requireDigit := parts[4] == "1"
+		requireSymbol := parts[5] == "1"
+		if min <= 0 {
+			min = minPlainLength
+		}
+		if max <= 0 {
+			max = maxPlainLength
+		}
+		switch {
+		case len(plain) < min:
+			return authx.ErrPasswordTooShort
+		case len(plain) > max:
+			return authx.ErrPasswordTooLong
+		}
+		var hasUpper, hasLower, hasDigit, hasSymbol bool
+		for _, r := range plain {
+			switch {
+			case r >= 'A' && r <= 'Z':
+				hasUpper = true
+			case r >= 'a' && r <= 'z':
+				hasLower = true
+			case r >= '0' && r <= '9':
+				hasDigit = true
+			default:
+				hasSymbol = true
+			}
+		}
+		switch {
+		case requireUpper && !hasUpper:
+			return authx.ErrPasswordTooWeak
+		case requireLower && !hasLower:
+			return authx.ErrPasswordTooWeak
+		case requireDigit && !hasDigit:
+			return authx.ErrPasswordTooWeak
+		case requireSymbol && !hasSymbol:
+			return authx.ErrPasswordTooWeak
+		}
+		return nil
+	})
+}
+
+// ruleParam 编码强度策略为规则参数（min|max|upper|lower|digit|symbol；
+// 用竖线分隔避免与 validx 规则串的逗号冲突）。
+func (c StrengthConfig) ruleParam() string {
+	upper := 0
+	if c.RequireUpper {
+		upper = 1
+	}
+	lower := 0
+	if c.RequireLower {
+		lower = 1
+	}
+	digit := 0
+	if c.RequireDigit {
+		digit = 1
+	}
+	symbol := 0
+	if c.RequireSymbol {
+		symbol = 1
+	}
+	return fmt.Sprintf("%d|%d|%d|%d|%d|%d",
+		c.MinLength, c.MaxLength, upper, lower, digit, symbol)
+}
 
 // StrengthConfig 可选的密码强度策略；零值表示仅使用默认长度规则。
 // 字段为 0 或 false 时对应规则不启用。
@@ -41,60 +133,12 @@ type StrengthConfig struct {
 
 // Validate 校验强度策略本身是否合法。
 func (c StrengthConfig) Validate() error {
-	if c.MinLength < 0 || c.MaxLength < 0 {
-		return errx.NewCode(authx.CodePasswordConfigInvalid, "强度策略长度不能为负")
-	}
-	if c.MinLength > 0 && c.MinLength < minPlainLength {
-		return errx.NewCode(authx.CodePasswordConfigInvalid, "强度策略最小长度不能低于默认下限")
-	}
-	if c.MaxLength > 0 && c.MaxLength < minPlainLength {
-		return errx.NewCode(authx.CodePasswordConfigInvalid, "强度策略最大长度不能低于默认下限")
-	}
-	if c.MinLength > 0 && c.MaxLength > 0 && c.MinLength > c.MaxLength {
-		return errx.NewCode(authx.CodePasswordConfigInvalid, "强度策略最小长度不能大于最大长度")
-	}
-	return nil
+	return validx.ValidateField(c, "authx_strength_config")
 }
 
 // Check 校验明文是否满足强度策略；不满足返回 ErrPasswordTooWeak。
 func (c StrengthConfig) Check(plain string) error {
-	min, max := minPlainLength, maxPlainLength
-	if c.MinLength > 0 {
-		min = c.MinLength
-	}
-	if c.MaxLength > 0 {
-		max = c.MaxLength
-	}
-	switch {
-	case len(plain) < min:
-		return authx.ErrPasswordTooShort
-	case len(plain) > max:
-		return authx.ErrPasswordTooLong
-	}
-	var hasUpper, hasLower, hasDigit, hasSymbol bool
-	for _, r := range plain {
-		switch {
-		case r >= 'A' && r <= 'Z':
-			hasUpper = true
-		case r >= 'a' && r <= 'z':
-			hasLower = true
-		case r >= '0' && r <= '9':
-			hasDigit = true
-		default:
-			hasSymbol = true
-		}
-	}
-	switch {
-	case c.RequireUpper && !hasUpper:
-		return authx.ErrPasswordTooWeak
-	case c.RequireLower && !hasLower:
-		return authx.ErrPasswordTooWeak
-	case c.RequireDigit && !hasDigit:
-		return authx.ErrPasswordTooWeak
-	case c.RequireSymbol && !hasSymbol:
-		return authx.ErrPasswordTooWeak
-	}
-	return nil
+	return validx.ValidateField(plain, "authx_strength_check="+c.ruleParam())
 }
 
 // randRead 可替换的随机源，便于测试注入失败场景。

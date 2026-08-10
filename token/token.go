@@ -13,6 +13,7 @@ import (
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/errx"
 	"github.com/lcylpzls/idgenx"
+	"github.com/lcylpzls/validx"
 )
 
 // maxTokenRawLength 原始令牌长度上限（64 KiB，防超长输入 DoS）。
@@ -46,11 +47,20 @@ type Signer struct {
 // Option 配置 Signer 的可选参数。
 type Option func(*Signer) error
 
+// validateTokenArg 使用 validx 规则校验 token 配置参数，
+// 失败统一映射为 CodeTokenConfigInvalid。
+func validateTokenArg(value any, rules, msg string) error {
+	if err := validx.ValidateField(value, rules); err != nil {
+		return errx.WrapCode(err, authx.CodeTokenConfigInvalid, msg)
+	}
+	return nil
+}
+
 // WithTTL 设置访问令牌有效期（必须为正）。
 func WithTTL(ttl time.Duration) Option {
 	return func(s *Signer) error {
-		if ttl <= 0 {
-			return errx.NewCode(authx.CodeTokenConfigInvalid, "令牌有效期必须为正")
+		if err := validateTokenArg(ttl, "gt=0", "令牌有效期必须为正"); err != nil {
+			return err
 		}
 		s.ttl = ttl
 		return nil
@@ -60,8 +70,8 @@ func WithTTL(ttl time.Duration) Option {
 // WithIssuer 设置签发方校验（签发与校验共用）。
 func WithIssuer(issuer string) Option {
 	return func(s *Signer) error {
-		if issuer == "" {
-			return errx.NewCode(authx.CodeTokenConfigInvalid, "签发方不能为空")
+		if err := validateTokenArg(issuer, "required", "签发方不能为空"); err != nil {
+			return err
 		}
 		s.issuer = issuer
 		return nil
@@ -71,8 +81,8 @@ func WithIssuer(issuer string) Option {
 // WithAudience 设置受众校验（签发与校验共用）。
 func WithAudience(audience ...string) Option {
 	return func(s *Signer) error {
-		if len(audience) == 0 {
-			return errx.NewCode(authx.CodeTokenConfigInvalid, "受众不能为空")
+		if err := validateTokenArg(audience, "min=1", "受众不能为空"); err != nil {
+			return err
 		}
 		s.audience = append([]string(nil), audience...)
 		return nil
@@ -82,8 +92,8 @@ func WithAudience(audience ...string) Option {
 // WithRevocationStore 接入撤销列表（校验时检查 jti）。
 func WithRevocationStore(store RevocationStore) Option {
 	return func(s *Signer) error {
-		if store == nil {
-			return errx.NewCode(authx.CodeTokenConfigInvalid, "撤销列表不能为空")
+		if err := validateTokenArg(store, "required", "撤销列表不能为空"); err != nil {
+			return err
 		}
 		s.revoke = store
 		return nil
@@ -93,8 +103,8 @@ func WithRevocationStore(store RevocationStore) Option {
 // WithClock 注入时间源（测试用）。
 func WithClock(now func() time.Time) Option {
 	return func(s *Signer) error {
-		if now == nil {
-			return errx.NewCode(authx.CodeTokenConfigInvalid, "时间源不能为空")
+		if err := validateTokenArg(now, "required", "时间源不能为空"); err != nil {
+			return err
 		}
 		s.now = now
 		return nil
@@ -104,8 +114,8 @@ func WithClock(now func() time.Time) Option {
 // WithLeeway 设置签发/校验的时间容差（允许客户端时钟偏移，必须非负）。
 func WithLeeway(d time.Duration) Option {
 	return func(s *Signer) error {
-		if d < 0 {
-			return errx.NewCode(authx.CodeTokenConfigInvalid, "时间容差不能为负")
+		if err := validateTokenArg(d, "gte=0", "时间容差不能为负"); err != nil {
+			return err
 		}
 		s.leeway = d
 		return nil
@@ -115,8 +125,8 @@ func WithLeeway(d time.Duration) Option {
 // WithKID 设置签发密钥标识（写入 JWT 头 kid），配合多密钥轮换使用。
 func WithKID(kid string) Option {
 	return func(s *Signer) error {
-		if kid == "" {
-			return errx.NewCode(authx.CodeTokenConfigInvalid, "密钥标识不能为空")
+		if err := validateTokenArg(kid, "required", "密钥标识不能为空"); err != nil {
+			return err
 		}
 		s.kid = kid
 		return nil
@@ -127,8 +137,8 @@ func WithKID(kid string) Option {
 // 启用后 Parse 按令牌头 kid 选择密钥，用于密钥轮换期间同时验证新旧密钥。
 func WithVerificationKeys(keys map[string]any) Option {
 	return func(s *Signer) error {
-		if len(keys) == 0 {
-			return errx.NewCode(authx.CodeTokenConfigInvalid, "验证密钥表不能为空")
+		if err := validateTokenArg(keys, "min=1", "验证密钥表不能为空"); err != nil {
+			return err
 		}
 		s.verifyKeys = make(map[string]any, len(keys))
 		for k, v := range keys {
@@ -140,8 +150,11 @@ func WithVerificationKeys(keys map[string]any) Option {
 
 // New 使用任意签名方法与密钥构造签发器。
 func New(method jwt.SigningMethod, key any, opts ...Option) (*Signer, error) {
-	if method == nil || key == nil {
-		return nil, errx.NewCode(authx.CodeTokenConfigInvalid, "签名方法与密钥不能为空")
+	if err := validateTokenArg(method, "required", "签名方法与密钥不能为空"); err != nil {
+		return nil, err
+	}
+	if err := validateTokenArg(key, "required", "签名方法与密钥不能为空"); err != nil {
+		return nil, err
 	}
 	s := &Signer{
 		method:    method,
@@ -171,8 +184,8 @@ func New(method jwt.SigningMethod, key any, opts ...Option) (*Signer, error) {
 
 // NewHS256 使用 HMAC-SHA256 构造签发器（secret 至少 32 字节）。
 func NewHS256(secret []byte, opts ...Option) (*Signer, error) {
-	if len(secret) < 32 {
-		return nil, errx.NewCode(authx.CodeTokenConfigInvalid, "HMAC 密钥至少 32 字节")
+	if err := validateTokenArg(secret, "min=32", "HMAC 密钥至少 32 字节"); err != nil {
+		return nil, err
 	}
 	return New(jwt.SigningMethodHS256, secret, opts...)
 }
@@ -195,8 +208,8 @@ func NewES256(private *ecdsa.PrivateKey, opts ...Option) (*Signer, error) {
 
 // NewEdDSA 使用 Ed25519 构造签发器。
 func NewEdDSA(private ed25519.PrivateKey, opts ...Option) (*Signer, error) {
-	if len(private) != ed25519.PrivateKeySize {
-		return nil, errx.NewCode(authx.CodeTokenConfigInvalid, "Ed25519 私钥长度非法")
+	if err := validateTokenArg(private, "len=64", "Ed25519 私钥长度非法"); err != nil {
+		return nil, err
 	}
 	return New(jwt.SigningMethodEdDSA, private, opts...)
 }

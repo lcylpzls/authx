@@ -14,6 +14,7 @@ import (
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/cryptox"
 	"github.com/lcylpzls/errx"
+	"github.com/lcylpzls/validx"
 )
 
 const (
@@ -53,20 +54,29 @@ func DefaultTOTPConfig() TOTPConfig {
 	return TOTPConfig{Algorithm: AlgorithmSHA1, Digits: 6, Period: defaultPeriod}
 }
 
-// Validate 校验 TOTP 配置。
+// init 注册 TOTP 配置校验规则到 validx 全局规则表，错误码保持 authx 语义。
+func init() {
+	_ = validx.RegisterRule("authx_totp_config", func(value any, param, path string) error {
+		// 内部调用保证 value 为 TOTPConfig。
+		c := value.(TOTPConfig)
+		switch c.Algorithm {
+		case AlgorithmSHA1, AlgorithmSHA256, AlgorithmSHA512:
+		default:
+			return authx.ErrMFAConfigInvalid
+		}
+		if c.Digits != 6 && c.Digits != 8 {
+			return authx.ErrMFAConfigInvalid
+		}
+		if c.Period < time.Second {
+			return authx.ErrMFAConfigInvalid
+		}
+		return nil
+	})
+}
+
+// Validate 校验 TOTP 配置（统一走 validx 规则）。
 func (c TOTPConfig) Validate() error {
-	switch c.Algorithm {
-	case AlgorithmSHA1, AlgorithmSHA256, AlgorithmSHA512:
-	default:
-		return authx.ErrMFAConfigInvalid
-	}
-	if c.Digits != 6 && c.Digits != 8 {
-		return authx.ErrMFAConfigInvalid
-	}
-	if c.Period < time.Second {
-		return authx.ErrMFAConfigInvalid
-	}
-	return nil
+	return validx.ValidateField(c, "authx_totp_config")
 }
 
 // hashName 返回算法对应的 cryptox 算法名。

@@ -2,6 +2,26 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+## [v1.8.0] - 2026-08-10
+
+### 变更
+
+- 校验能力统一迁移至家族 `validx`：
+  - Argon2id 哈希参数校验注册 `authx_password_config`；
+  - 密码强度策略校验/明文检查注册 `authx_strength_config` /
+    `authx_strength_check`；
+  - TOTP 配置校验注册 `authx_totp_config`；
+  - token 的 Option/构造参数校验统一走 validx 内置规则
+    （gt / gte / required / min / len），错误保持
+    `CodeTokenConfigInvalid`；
+  - 会话存储参数校验统一走 validx 内置规则，错误保持
+    `ErrSessionInvalid`。
+
+### 质量
+
+- 全部库包语句覆盖率保持 100%；race / vet / staticcheck /
+  govulncheck 全绿。
+
 ## [v1.7.0] - 2026-08-10
 
 ### 变更

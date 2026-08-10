@@ -1,6 +1,31 @@
 package authx
 
-import "github.com/lcylpzls/errx"
+import (
+	"github.com/lcylpzls/errx"
+	"github.com/lcylpzls/validx"
+)
+
+// init 注册 Argon2id 参数校验规则到 validx 全局规则表，错误码保持 authx 语义。
+func init() {
+	_ = validx.RegisterRule("authx_password_config", func(value any, param, path string) error {
+		// 内部调用保证 value 为 PasswordConfig。
+		c := value.(PasswordConfig)
+		switch {
+		case c.Memory < 8*1024:
+			return errx.NewCode(CodePasswordConfigInvalid, "内存成本过低，至少 8MiB")
+		case c.Iterations == 0:
+			return errx.NewCode(CodePasswordConfigInvalid, "时间成本不能为零")
+		case c.Parallelism == 0 || c.Parallelism > 4:
+			return errx.NewCode(CodePasswordConfigInvalid, "并行度必须在 1-4 之间")
+		case c.KeyLength < 16:
+			return errx.NewCode(CodePasswordConfigInvalid, "密钥长度至少 16 字节")
+		case c.SaltLength < 8:
+			return errx.NewCode(CodePasswordConfigInvalid, "盐长度至少 8 字节")
+		default:
+			return nil
+		}
+	})
+}
 
 // PasswordConfig Argon2id 哈希参数（RFC 9106）。
 type PasswordConfig struct {
@@ -30,18 +55,5 @@ func DefaultPasswordConfig() PasswordConfig {
 
 // Validate 校验哈希参数是否可用于派生密钥。
 func (c PasswordConfig) Validate() error {
-	switch {
-	case c.Memory < 8*1024:
-		return errx.NewCode(CodePasswordConfigInvalid, "内存成本过低，至少 8MiB")
-	case c.Iterations == 0:
-		return errx.NewCode(CodePasswordConfigInvalid, "时间成本不能为零")
-	case c.Parallelism == 0 || c.Parallelism > 4:
-		return errx.NewCode(CodePasswordConfigInvalid, "并行度必须在 1-4 之间")
-	case c.KeyLength < 16:
-		return errx.NewCode(CodePasswordConfigInvalid, "密钥长度至少 16 字节")
-	case c.SaltLength < 8:
-		return errx.NewCode(CodePasswordConfigInvalid, "盐长度至少 8 字节")
-	default:
-		return nil
-	}
+	return validx.ValidateField(c, "authx_password_config")
 }

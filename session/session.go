@@ -9,6 +9,7 @@ import (
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/errx"
 	"github.com/lcylpzls/idgenx"
+	"github.com/lcylpzls/validx"
 )
 
 const (
@@ -19,6 +20,14 @@ const (
 
 // randRead 可替换的随机源，便于测试注入失败与冲突场景。
 var randRead = idgenx.RandomHex
+
+// validSessionArg 使用 validx 规则校验会话参数，失败返回 ErrSessionInvalid。
+func validSessionArg(value any, rules string) error {
+	if err := validx.ValidateField(value, rules); err != nil {
+		return authx.ErrSessionInvalid
+	}
+	return nil
+}
 
 // Session 会话数据：ID 与键值对（业务可扩展）。
 type Session struct {
@@ -74,8 +83,8 @@ func NewMemoryStoreWithLimit(now func() time.Time, maxEntries int) *MemoryStore 
 
 // Create 创建并保存新会话。
 func (s *MemoryStore) Create(ctx context.Context, ttl time.Duration) (Session, error) {
-	if ttl <= 0 {
-		return Session{}, authx.ErrSessionInvalid
+	if err := validSessionArg(ttl, "gt=0"); err != nil {
+		return Session{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -100,8 +109,8 @@ func (s *MemoryStore) Create(ctx context.Context, ttl time.Duration) (Session, e
 
 // Get 读取会话。
 func (s *MemoryStore) Get(_ context.Context, id string) (Session, error) {
-	if id == "" {
-		return Session{}, authx.ErrSessionInvalid
+	if err := validSessionArg(id, "required"); err != nil {
+		return Session{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -118,8 +127,11 @@ func (s *MemoryStore) Get(_ context.Context, id string) (Session, error) {
 
 // Save 保存会话（内部存储副本，避免外部修改）。
 func (s *MemoryStore) Save(_ context.Context, sess Session, ttl time.Duration) error {
-	if sess.ID == "" || ttl <= 0 {
-		return authx.ErrSessionInvalid
+	if err := validSessionArg(sess.ID, "required"); err != nil {
+		return err
+	}
+	if err := validSessionArg(ttl, "gt=0"); err != nil {
+		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -140,8 +152,8 @@ func (s *MemoryStore) saveLocked(sess Session, ttl time.Duration) {
 
 // Delete 删除会话。
 func (s *MemoryStore) Delete(_ context.Context, id string) error {
-	if id == "" {
-		return authx.ErrSessionInvalid
+	if err := validSessionArg(id, "required"); err != nil {
+		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -151,8 +163,11 @@ func (s *MemoryStore) Delete(_ context.Context, id string) error {
 
 // Rotate 轮换会话 ID：读取旧会话、生成新 ID、复制全部值并删除旧条目。
 func (s *MemoryStore) Rotate(ctx context.Context, id string, ttl time.Duration) (Session, error) {
-	if id == "" || ttl <= 0 {
-		return Session{}, authx.ErrSessionInvalid
+	if err := validSessionArg(id, "required"); err != nil {
+		return Session{}, err
+	}
+	if err := validSessionArg(ttl, "gt=0"); err != nil {
+		return Session{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -7,9 +7,10 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/lcylpzls/cryptox v0.6.7
 	github.com/lcylpzls/errx v1.4.0
+	github.com/lcylpzls/idgenx v1.3.0
 	github.com/lcylpzls/logx v1.1.0
-	github.com/lcylpzls/testx v1.2.0
-	github.com/lcylpzls/webx v1.3.0
+	github.com/lcylpzls/testx v1.2.1
+	github.com/lcylpzls/webx v1.4.0
 	golang.org/x/oauth2 v0.36.0
 )
 

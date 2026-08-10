@@ -38,10 +38,10 @@ func TestRefreshErrors(t *testing.T) {
 	if _, err := IssueRefreshToken(ctx, nil, time.Hour); err == nil || !errx.Is(err, authx.CodeRefreshTokenInvalid) {
 		t.Fatalf("空存储应报错，实际：%v", err)
 	}
-	orig := randRead
-	randRead = func(n int) ([]byte, error) { return nil, errors.New("随机源故障") }
+	orig := refreshRand
+	refreshRand = func(n int) (string, error) { return "", errors.New("随机源故障") }
 	_, err := IssueRefreshToken(ctx, store, time.Hour)
-	randRead = orig
+	refreshRand = orig
 	if err == nil || !errx.Is(err, authx.CodeRefreshTokenInvalid) {
 		t.Fatalf("随机源故障应报错，实际：%v", err)
 	}

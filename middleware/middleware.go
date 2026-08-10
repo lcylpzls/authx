@@ -2,7 +2,6 @@
 package middleware
 
 import (
-	"encoding/base64"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"github.com/lcylpzls/authx/token"
 	"github.com/lcylpzls/cryptox"
 	"github.com/lcylpzls/errx"
+	"github.com/lcylpzls/idgenx"
 	"github.com/lcylpzls/webx"
 )
 
@@ -26,8 +26,8 @@ const (
 	maxOriginLength    = 2048 // Origin/Referer 长度上限
 )
 
-// randRead 可替换的随机源，便于测试注入失败场景。
-var randRead = cryptox.RandomBytes
+// csrfRand 可替换的 CSRF 令牌随机源，便于测试注入失败场景。
+var csrfRand = idgenx.RandomBase64URL
 
 // ErrorResponse 中间件统一 JSON 错误响应体（errx 语义）。
 type ErrorResponse struct {
@@ -254,11 +254,11 @@ func WithCSRFAllowedOrigins(origins ...string) CSRFOption {
 
 // GenerateCSRFToken 生成 32 字节随机 base64url 令牌。
 func GenerateCSRFToken() (string, error) {
-	b, err := randRead(csrfTokenBytes)
+	token, err := csrfRand(csrfTokenBytes)
 	if err != nil {
 		return "", errx.WrapCode(err, authx.CodeCSRFGenerationFailed, "CSRF 令牌生成失败")
 	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	return token, nil
 }
 
 // ValidateCSRFToken 常量时间比较 Cookie 与请求头令牌；超长或空值直接拒绝。

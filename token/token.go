@@ -6,14 +6,13 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rsa"
-	"encoding/hex"
 	"errors"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lcylpzls/authx"
-	"github.com/lcylpzls/cryptox"
 	"github.com/lcylpzls/errx"
+	"github.com/lcylpzls/idgenx"
 )
 
 // maxTokenRawLength 原始令牌长度上限（64 KiB，防超长输入 DoS）。
@@ -27,7 +26,7 @@ type Claims struct {
 }
 
 // randRead 可替换的随机源，便于测试注入失败场景。
-var randRead = cryptox.RandomBytes
+var randRead = idgenx.RandomHex
 
 // Signer JWT 签发与校验器。
 type Signer struct {
@@ -327,9 +326,5 @@ func classifyParseError(err error) error {
 
 // newJTI 生成 16 字节随机十六进制 jti；随机源失败返回错误，不回退弱标识。
 func newJTI() (string, error) {
-	b, err := randRead(16)
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
+	return randRead(16)
 }

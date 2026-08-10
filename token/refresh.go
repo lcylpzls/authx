@@ -2,16 +2,19 @@ package token
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/hex"
 	"time"
 
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/cryptox"
 	"github.com/lcylpzls/errx"
+	"github.com/lcylpzls/idgenx"
 )
 
 const refreshTokenBytes = 32
+
+// refreshRand 可替换的刷新令牌随机源，便于测试注入失败场景。
+var refreshRand = idgenx.RandomBase64URL
 
 // IssueRefreshToken 生成刷新令牌并存储其哈希，返回明文令牌。
 func IssueRefreshToken(ctx context.Context, store RefreshStore, ttl time.Duration, opts ...TraceOption) (token string, err error) {
@@ -20,11 +23,11 @@ func IssueRefreshToken(ctx context.Context, store RefreshStore, ttl time.Duratio
 	if store == nil {
 		return "", errx.New(errx.KindInvalid, authx.CodeRefreshTokenInvalid, "刷新令牌存储不能为空")
 	}
-	raw, err := randRead(refreshTokenBytes)
+	raw, err := refreshRand(refreshTokenBytes)
 	if err != nil {
 		return "", errx.Wrap(err, errx.KindUnavailable, authx.CodeRefreshTokenInvalid, "刷新令牌生成失败")
 	}
-	token = base64.RawURLEncoding.EncodeToString(raw)
+	token = raw
 	if err := store.Save(ctx, HashRefreshToken(token), ttl); err != nil {
 		return "", errx.Wrap(err, errx.KindUnavailable, authx.CodeRefreshTokenInvalid, "刷新令牌存储失败")
 	}

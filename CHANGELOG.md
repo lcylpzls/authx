@@ -2,6 +2,23 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+## [v1.7.0] - 2026-08-10
+
+### 变更
+
+- 应用层随机 ID 统一迁移至家族 `idgenx`：
+  - 会话 ID 改用 `idgenx.RandomHex(32)`（64 位 hex）；
+  - JWT jti 改用 `idgenx.RandomHex(16)`（32 位 hex）；
+  - 刷新令牌改用 `idgenx.RandomBase64URL(32)`；
+  - CSRF 令牌改用 `idgenx.RandomBase64URL(32)`；
+  - 密码学密钥材料（密码盐、MFA secret、恢复码）保留在 `cryptox`。
+- webx 依赖升级至 v1.4.0（请求 ID 已归 idgenx）。
+
+### 质量
+
+- 全部库包语句覆盖率保持 100%；race / vet / staticcheck /
+  govulncheck 全绿。
+
 ## [v1.6.0] - 2026-08-10
 
 ### 变更

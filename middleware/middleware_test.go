@@ -297,9 +297,9 @@ func TestGenerateCSRFTokenError(t *testing.T) {
 	if err != nil || token == "" {
 		t.Fatalf("正常生成应成功：%q %v", token, err)
 	}
-	orig := randRead
-	randRead = func(n int) ([]byte, error) { return nil, errors.New("随机源故障") }
-	defer func() { randRead = orig }()
+	orig := csrfRand
+	csrfRand = func(n int) (string, error) { return "", errors.New("随机源故障") }
+	defer func() { csrfRand = orig }()
 	if _, err := GenerateCSRFToken(); err == nil || !errx.Is(err, authx.CodeCSRFGenerationFailed) {
 		t.Fatalf("随机源故障应报错，实际：%v", err)
 	}
@@ -371,9 +371,9 @@ func TestCSRFProtect(t *testing.T) {
 
 // TestCSRFProtectGenerationFailure 覆盖令牌生成失败返回 500。
 func TestCSRFProtectGenerationFailure(t *testing.T) {
-	orig := randRead
-	randRead = func(n int) ([]byte, error) { return nil, errors.New("随机源故障") }
-	defer func() { randRead = orig }()
+	orig := csrfRand
+	csrfRand = func(n int) (string, error) { return "", errors.New("随机源故障") }
+	defer func() { csrfRand = orig }()
 	mw := CSRFProtect("csrf", "X-CSRF-Token")
 	w, _ := runChain(t, http.MethodGet, mw)
 	testx.RequireEqual(t, w.Code, http.StatusInternalServerError)
@@ -568,9 +568,9 @@ func TestCSRFErrorHandler(t *testing.T) {
 		t.Fatalf("CSRF 失败应调用自定义处理器：code=%d calls=%+v", w.Code, calls)
 	}
 	// 生成失败 → 500。
-	orig := randRead
-	randRead = func(n int) ([]byte, error) { return nil, errors.New("随机源故障") }
-	defer func() { randRead = orig }()
+	orig := csrfRand
+	csrfRand = func(n int) (string, error) { return "", errors.New("随机源故障") }
+	defer func() { csrfRand = orig }()
 	mw2 := CSRFProtect("csrf", "X-CSRF-Token", WithCSRFErrorHandler(handler))
 	w2, _ := runChain(t, http.MethodGet, mw2)
 	if w2.Code != http.StatusInternalServerError || len(calls) != 2 ||

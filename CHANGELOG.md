@@ -2,6 +2,20 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+
+## [v1.10.0] - 2026-08-11
+
+### 破坏性变更
+
+- `TraceHook` / `TraceAttr` 契约迁移至零依赖子模块
+  `tracex/contract`（v1.0.0），authx 不再依赖 tracex 主模块；
+- 类型名不变，导入路径变化：`WithTraceHook` 接受
+  `contract.TraceHook`，可直接传入 `tracex.NewHook(m)`。
+
+### 依赖
+
+- 新增 `tracex/contract v1.0.0`，移除 tracex 主模块生产依赖。
+
 ## [v1.9.2] - 2026-08-11
 
 ### 修复与质量

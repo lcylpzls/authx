@@ -1,12 +1,13 @@
 # authx
 
-**工业级认证与授权组件库**，与 errx / logx / webx 深度集成：
+**工业级认证与授权组件库**，与 errx / logx / tracex 家族打通：
 
 - 密码哈希：Argon2id（RFC 9106），支持参数迁移与常量时间比较；
 - 令牌：JWT 全套算法（HS/RS/ES/EdDSA）、刷新令牌、撤销列表；
 - 授权：RBAC 角色/权限模型（支持角色继承与环检测）；
-- 集成：webx 认证/权限/CSRF 中间件（Bearer 校验、401/403 标准响应）；
-- 会话：Session 存储接口 + 内存实现 + webx 会话中间件（自动落库）；
+- 集成：标准 net/http 认证/权限/CSRF 中间件
+  （`func(http.Handler) http.Handler`，可插拔到任意标准库 Web 服务）；
+- 会话：Session 存储接口 + 内存实现 + 标准会话中间件（自动落库）；
 - 多因素：TOTP（RFC 6238）与恢复码；
 - OAuth2：客户端（授权码 + PKCE）与服务端（授权码 + PKCE + 刷新令牌）；
 - 审计：结构化审计日志（logx 集成）+ 持久化钩子；
@@ -24,7 +25,7 @@ authx/
 ├── password/                 # Argon2id 哈希、校验、参数迁移
 ├── token/                    # JWT 全套算法、刷新令牌、撤销列表
 ├── rbac/                     # 角色/权限模型、角色继承
-├── middleware/               # webx 认证/权限/CSRF/会话中间件
+├── middleware/               # 标准 net/http 认证/权限/CSRF/会话中间件
 ├── session/                  # 会话模型与存储接口
 ├── mfa/                      # TOTP 与恢复码
 ├── oauth2/                   # OAuth2 客户端与授权服务端
@@ -110,6 +111,9 @@ defer sessCleanup.Stop()
 | v0.18.0 | 边界与并发打磨：TTL 精确边界矩阵、并发 bench、九目标 fuzz（已发布） |
 | v0.19.0 | 发布前终审：清理任务 panic 恢复、依赖整理、并发/泄漏终审（已发布，版本线完成） |
 | v1.0.0 | 正式版：进入语义化版本稳定期，v1.x 起承诺无破坏性 API 变更（已发布） |
+
+> 版本策略说明：自家族统一约定起，破坏性变更走 minor 版本
+> （不强制主版本升级），实际变更以 CHANGELOG 为准。
 
 ## 规范
 

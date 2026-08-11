@@ -10,7 +10,7 @@ require (
 	github.com/lcylpzls/idgenx v1.5.0
 	github.com/lcylpzls/logx v1.5.0
 	github.com/lcylpzls/testx v1.5.0
-	github.com/lcylpzls/tracex v1.1.0
+	github.com/lcylpzls/tracex v1.2.0
 	github.com/lcylpzls/validx v1.3.0
 	golang.org/x/oauth2 v0.36.0
 )

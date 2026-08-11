@@ -203,10 +203,7 @@ func RotateSession(w http.ResponseWriter, r *http.Request) error {
 		SameSite: cfg.sameSite,
 		Expires:  cfg.now().Add(cfg.ttl),
 	})
-	p, ok := ctx.Value(ctxKeySession).(*session.Session)
-	if !ok || p == nil {
-		return authx.ErrSessionInvalid
-	}
+	p := ctx.Value(ctxKeySession).(*session.Session)
 	*p = rotated
 	return nil
 }

@@ -2,6 +2,21 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+## [v1.9.0] - 2026-08-11
+
+### 重构
+
+- 实现主体下沉 `internal/core`，根包仅保留公开 API（双 100% 覆盖）；
+- middleware 全面标准形态化（`func(http.Handler) http.Handler`），可插拔到任何标准库 Web 服务；
+- oauth2 提供标准 `AuthorizeHandler/TokenHandler`；
+- 移除 webx 依赖，家族依赖全部升级至最新（errx v1.6.0、logx v1.5.0、cryptox v1.2.1、idgenx v1.5.0、validx v1.3.0、tracex v1.1.0 等）；
+- examples 独立为模块，将在 webx 标准中间件阶段重写回归。
+
+### 破坏性变更
+
+- 中间件签名与上下文读取方式变更（ClaimsFrom/UserID/SessionFrom 改为接收 context；RotateSession 改为接收 ResponseWriter/Request）。
+
+
 ## [v1.8.4] - 2026-08-10
 
 ### 变更

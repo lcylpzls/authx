@@ -1,7 +1,10 @@
-// Package middleware 提供 webx 认证、授权与 CSRF 中间件。
+// Package middleware 提供标准库形态的认证、授权与 CSRF 中间件，
+// 可插拔到任何基于 net/http 的 Web 服务。
 package middleware
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,12 +16,19 @@ import (
 	"github.com/lcylpzls/cryptox"
 	"github.com/lcylpzls/errx"
 	"github.com/lcylpzls/idgenx"
-	"github.com/lcylpzls/webx"
+)
+
+// ctxKey 是 request context 的私有键类型，避免与外部字符串键冲突。
+type ctxKey int
+
+const (
+	ctxKeyClaims ctxKey = iota
+	ctxKeyUserID
+	ctxKeySession
+	ctxKeySessionConfig
 )
 
 const (
-	ctxKeyClaims       = "authx_claims"
-	ctxKeyUserID       = "authx_user_id"
 	maxBearerLength    = 4096 // Bearer 令牌长度上限（防超长头 DoS）
 	maxCSRFTokenLength = 256  // CSRF 令牌长度上限（防超长值 DoS）
 	csrfTokenBytes     = 32
@@ -40,12 +50,14 @@ type ErrorResponse struct {
 }
 
 // ErrorHandler 自定义错误响应处理器；status 为建议 HTTP 状态码。
-type ErrorHandler func(c *webx.Context, status int, err error)
+type ErrorHandler func(w http.ResponseWriter, r *http.Request, status int, err error)
 
 // DefaultErrorHandler 输出结构化 JSON 错误响应。
-func DefaultErrorHandler(c *webx.Context, status int, err error) {
+func DefaultErrorHandler(w http.ResponseWriter, r *http.Request, status int, err error) {
 	resp := errorResponseFrom(err)
-	c.AbortWithStatusJSON(status, resp.Message, resp)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // errorResponseFrom 从错误提取 errx 语义；非 errx 错误回退 unknown。
@@ -86,8 +98,8 @@ func WithAuthErrorHandler(handler ErrorHandler) Option {
 }
 
 // Auth 构造 Bearer Token 认证中间件：解析并校验令牌，注入用户身份。
-// 校验失败返回 401 标准响应；成功后调用 c.Next() 继续处理链。
-func Auth(signer *token.Signer, opts ...Option) webx.HandlerFunc {
+// 校验失败返回 401 标准响应；成功后继续处理链。
+func Auth(signer *token.Signer, opts ...Option) func(http.Handler) http.Handler {
 	if signer == nil {
 		panic("authx: 签发器不能为空")
 	}
@@ -96,68 +108,74 @@ func Auth(signer *token.Signer, opts ...Option) webx.HandlerFunc {
 		opt(o)
 	}
 	challenge := "Bearer realm=" + quoteRealm(o.realm)
-	return func(c *webx.Context) {
-		raw, ok := bearerToken(c.GetHeader("Authorization"))
-		if !ok {
-			c.Header("WWW-Authenticate", challenge)
-			o.errorHandler(c, http.StatusUnauthorized, authx.ErrTokenMissing)
-			return
-		}
-		claims, err := signer.Parse(raw)
-		if err != nil {
-			c.Header("WWW-Authenticate", challenge)
-			o.errorHandler(c, http.StatusUnauthorized, err)
-			return
-		}
-		c.Set(ctxKeyClaims, claims)
-		c.Set(ctxKeyUserID, claims.Subject)
-		c.Next()
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			raw, ok := bearerToken(r.Header.Get("Authorization"))
+			if !ok {
+				w.Header().Set("WWW-Authenticate", challenge)
+				o.errorHandler(w, r, http.StatusUnauthorized, authx.ErrTokenMissing)
+				return
+			}
+			claims, err := signer.Parse(raw)
+			if err != nil {
+				w.Header().Set("WWW-Authenticate", challenge)
+				o.errorHandler(w, r, http.StatusUnauthorized, err)
+				return
+			}
+			ctx := context.WithValue(r.Context(), ctxKeyClaims, claims)
+			ctx = context.WithValue(ctx, ctxKeyUserID, claims.Subject)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
 	}
 }
 
 // RequirePermission 校验当前用户是否具备指定权限（须先经过 Auth 中间件）。
 // 未认证返回 401，权限不足返回 403。
-func RequirePermission(r *rbac.RBAC, permission string) webx.HandlerFunc {
+func RequirePermission(r *rbac.RBAC, permission string) func(http.Handler) http.Handler {
 	if r == nil || permission == "" {
 		panic("authx: RBAC 与权限点不能为空")
 	}
-	return func(c *webx.Context) {
-		claims, ok := ClaimsFrom(c)
-		if !ok {
-			DefaultErrorHandler(c, http.StatusUnauthorized, authx.ErrTokenMissing)
-			return
-		}
-		if !r.HasAnyPermission(claims.Roles, permission) {
-			DefaultErrorHandler(c, http.StatusForbidden, authx.ErrForbidden)
-			return
-		}
-		c.Next()
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			claims, ok := ClaimsFrom(req.Context())
+			if !ok {
+				DefaultErrorHandler(w, req, http.StatusUnauthorized, authx.ErrTokenMissing)
+				return
+			}
+			if !r.HasAnyPermission(claims.Roles, permission) {
+				DefaultErrorHandler(w, req, http.StatusForbidden, authx.ErrForbidden)
+				return
+			}
+			next.ServeHTTP(w, req)
+		})
 	}
 }
 
 // RequireRole 校验当前用户是否具备指定角色（须先经过 Auth 中间件）。
-func RequireRole(r *rbac.RBAC, role string) webx.HandlerFunc {
+func RequireRole(r *rbac.RBAC, role string) func(http.Handler) http.Handler {
 	if r == nil || role == "" {
 		panic("authx: RBAC 与角色不能为空")
 	}
-	return func(c *webx.Context) {
-		claims, ok := ClaimsFrom(c)
-		if !ok {
-			DefaultErrorHandler(c, http.StatusUnauthorized, authx.ErrTokenMissing)
-			return
-		}
-		for _, have := range claims.Roles {
-			if have == role {
-				c.Next()
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			claims, ok := ClaimsFrom(req.Context())
+			if !ok {
+				DefaultErrorHandler(w, req, http.StatusUnauthorized, authx.ErrTokenMissing)
 				return
 			}
-		}
-		DefaultErrorHandler(c, http.StatusForbidden, authx.ErrForbidden)
+			for _, have := range claims.Roles {
+				if have == role {
+					next.ServeHTTP(w, req)
+					return
+				}
+			}
+			DefaultErrorHandler(w, req, http.StatusForbidden, authx.ErrForbidden)
+		})
 	}
 }
 
 // CSRF 构造双提交 Cookie 校验中间件：非安全方法要求请求头与 Cookie 一致。
-func CSRF(cookieName, headerName string, skipMethods ...string) webx.HandlerFunc {
+func CSRF(cookieName, headerName string, skipMethods ...string) func(http.Handler) http.Handler {
 	if cookieName == "" || headerName == "" {
 		panic("authx: CSRF Cookie 与请求头名称不能为空")
 	}
@@ -168,17 +186,19 @@ func CSRF(cookieName, headerName string, skipMethods ...string) webx.HandlerFunc
 	for _, m := range skipMethods {
 		skip[strings.ToUpper(m)] = true
 	}
-	return func(c *webx.Context) {
-		if skip[c.Request().Method] {
-			c.Next()
-			return
-		}
-		cookie, err := c.Cookie(cookieName)
-		if err != nil || !ValidateCSRFToken(cookie.Value, c.GetHeader(headerName)) {
-			DefaultErrorHandler(c, http.StatusForbidden, authx.ErrCSRFMismatch)
-			return
-		}
-		c.Next()
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if skip[r.Method] {
+				next.ServeHTTP(w, r)
+				return
+			}
+			cookie, err := r.Cookie(cookieName)
+			if err != nil || !ValidateCSRFToken(cookie.Value, r.Header.Get(headerName)) {
+				DefaultErrorHandler(w, r, http.StatusForbidden, authx.ErrCSRFMismatch)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
 }
 
@@ -272,7 +292,7 @@ func ValidateCSRFToken(cookie, header string) bool {
 
 // CSRFProtect 构造双提交 Cookie 中间件：安全方法放行并保证已种令牌，
 // 非安全方法要求请求头与 Cookie 令牌一致（常量时间比较）。
-func CSRFProtect(cookieName, headerName string, opts ...CSRFOption) webx.HandlerFunc {
+func CSRFProtect(cookieName, headerName string, opts ...CSRFOption) func(http.Handler) http.Handler {
 	if cookieName == "" || headerName == "" {
 		panic("authx: CSRF Cookie 与请求头名称不能为空")
 	}
@@ -299,49 +319,51 @@ func CSRFProtect(cookieName, headerName string, opts ...CSRFOption) webx.Handler
 		http.MethodHead:    true,
 		http.MethodOptions: true,
 	}
-	return func(c *webx.Context) {
-		if cookie, err := c.Cookie(cookieName); err != nil || cookie.Value == "" {
-			token, terr := GenerateCSRFToken()
-			if terr != nil {
-				o.err(c, http.StatusInternalServerError, authx.ErrCSRFGenerationFailed)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if cookie, err := r.Cookie(cookieName); err != nil || cookie.Value == "" {
+				token, terr := GenerateCSRFToken()
+				if terr != nil {
+					o.err(w, r, http.StatusInternalServerError, authx.ErrCSRFGenerationFailed)
+					return
+				}
+				http.SetCookie(w, &http.Cookie{
+					Name:     cookieName,
+					Value:    token,
+					Path:     o.path,
+					Secure:   o.secure,
+					HttpOnly: o.httpOnly,
+					SameSite: o.sameSite,
+					Expires:  o.now().Add(o.ttl),
+				})
+			}
+			if skip[r.Method] {
+				next.ServeHTTP(w, r)
 				return
 			}
-			c.SetCookie(&http.Cookie{
-				Name:     cookieName,
-				Value:    token,
-				Path:     o.path,
-				Secure:   o.secure,
-				HttpOnly: o.httpOnly,
-				SameSite: o.sameSite,
-				Expires:  o.now().Add(o.ttl),
-			})
-		}
-		if skip[c.Request().Method] {
-			c.Next()
-			return
-		}
-		if !o.originAllowed(c) {
-			o.err(c, http.StatusForbidden, authx.ErrCSRFMismatch)
-			return
-		}
-		cookieValue := ""
-		if cookie, err := c.Cookie(cookieName); err == nil {
-			cookieValue = cookie.Value
-		}
-		if !ValidateCSRFToken(cookieValue, c.GetHeader(headerName)) {
-			o.err(c, http.StatusForbidden, authx.ErrCSRFMismatch)
-			return
-		}
-		c.Next()
+			if !o.originAllowed(r) {
+				o.err(w, r, http.StatusForbidden, authx.ErrCSRFMismatch)
+				return
+			}
+			cookieValue := ""
+			if cookie, err := r.Cookie(cookieName); err == nil {
+				cookieValue = cookie.Value
+			}
+			if !ValidateCSRFToken(cookieValue, r.Header.Get(headerName)) {
+				o.err(w, r, http.StatusForbidden, authx.ErrCSRFMismatch)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
 }
 
 // originAllowed 校验非安全请求的来源；未配置允许列表时直接放行。
-func (o *csrfOptions) originAllowed(c *webx.Context) bool {
+func (o *csrfOptions) originAllowed(r *http.Request) bool {
 	if len(o.origins) == 0 {
 		return true
 	}
-	if origin := c.GetHeader("Origin"); origin != "" {
+	if origin := r.Header.Get("Origin"); origin != "" {
 		if len(origin) > maxOriginLength {
 			return false
 		}
@@ -352,7 +374,7 @@ func (o *csrfOptions) originAllowed(c *webx.Context) bool {
 		}
 		return false
 	}
-	if ref := c.GetHeader("Referer"); ref != "" {
+	if ref := r.Header.Get("Referer"); ref != "" {
 		if len(ref) > maxOriginLength {
 			return false
 		}
@@ -370,10 +392,10 @@ func (o *csrfOptions) originAllowed(c *webx.Context) bool {
 	return false
 }
 
-// ClaimsFrom 从上下文读取已认证用户的令牌载荷。
-func ClaimsFrom(c *webx.Context) (token.Claims, bool) {
-	v, ok := c.Get(ctxKeyClaims)
-	if !ok {
+// ClaimsFrom 从请求上下文读取已认证用户的令牌载荷。
+func ClaimsFrom(ctx context.Context) (token.Claims, bool) {
+	v := ctx.Value(ctxKeyClaims)
+	if v == nil {
 		return token.Claims{}, false
 	}
 	claims, ok := v.(token.Claims)
@@ -381,8 +403,13 @@ func ClaimsFrom(c *webx.Context) (token.Claims, bool) {
 }
 
 // UserID 返回已认证用户主体标识（未认证时为空字符串）。
-func UserID(c *webx.Context) string {
-	return c.GetString(ctxKeyUserID)
+func UserID(ctx context.Context) string {
+	v := ctx.Value(ctxKeyUserID)
+	if v == nil {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
 }
 
 // bearerToken 从 Authorization 头提取 Bearer 令牌。
@@ -398,5 +425,5 @@ func bearerToken(header string) (string, bool) {
 func quoteRealm(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `"`, `\"`)
-	return `"` + s + `"`
+	return s
 }

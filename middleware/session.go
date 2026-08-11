@@ -12,12 +12,9 @@ import (
 	"github.com/lcylpzls/authx/session"
 	"github.com/lcylpzls/cryptox"
 	"github.com/lcylpzls/logx"
-	"github.com/lcylpzls/webx"
 )
 
 const (
-	ctxKeySession       = "authx_session"
-	ctxKeySessionConfig = "authx_session_config"
 	minSessionSignKey   = 16  // 会话签名密钥最短长度
 	maxSessionCookieLen = 512 // 会话 Cookie 值长度上限
 )
@@ -96,7 +93,7 @@ func WithSessionSigningKey(key []byte) SessionOption {
 
 // Session 构造会话中间件：读取/创建会话，请求结束后自动保存。
 // 处理器内通过 SessionFrom 读取，修改 Values 后由中间件统一落库。
-func Session(store session.Store, cookieName string, opts ...SessionOption) webx.HandlerFunc {
+func Session(store session.Store, cookieName string, opts ...SessionOption) func(http.Handler) http.Handler {
 	if store == nil || cookieName == "" {
 		panic("authx: 会话存储与 Cookie 名不能为空")
 	}
@@ -121,45 +118,45 @@ func Session(store session.Store, cookieName string, opts ...SessionOption) webx
 	cfg := &sessionConfig{store: store, cookieName: cookieName, ttl: o.ttl, secure: o.secure,
 		httpOnly: o.httpOnly, path: o.path, sameSite: o.sameSite, now: o.now, logger: o.logger,
 		signKey: o.signKey}
-	return func(c *webx.Context) {
-		ctx := c.Request().Context()
-		sess, err := loadSession(ctx, store, c, cookieName, o.signKey)
-		if err != nil {
-			o.err(c, http.StatusInternalServerError, err)
-			return
-		}
-		if sess.ID == "" {
-			created, cerr := store.Create(ctx, o.ttl)
-			if cerr != nil {
-				o.err(c, http.StatusInternalServerError, cerr)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			sess, err := loadSession(ctx, store, r, cookieName, o.signKey)
+			if err != nil {
+				o.err(w, r, http.StatusInternalServerError, err)
 				return
 			}
-			sess = created
-			c.SetCookie(&http.Cookie{
-				Name:     cookieName,
-				Value:    signedSessionValue(sess.ID, o.signKey),
-				Path:     o.path,
-				Secure:   o.secure,
-				HttpOnly: o.httpOnly,
-				SameSite: o.sameSite,
-				Expires:  o.now().Add(o.ttl),
-			})
-		}
-		c.Set(ctxKeySessionConfig, cfg)
-		c.Set(ctxKeySession, sess)
-		c.Next()
-		// 处理器内可能已通过 RotateSession 轮换会话，保存前重新读取最新会话。
-		if latest, ok := c.Get(ctxKeySession); ok {
-			if s, ok := latest.(session.Session); ok && s.ID != "" {
-				sess = s
+			if sess.ID == "" {
+				created, cerr := store.Create(ctx, o.ttl)
+				if cerr != nil {
+					o.err(w, r, http.StatusInternalServerError, cerr)
+					return
+				}
+				sess = created
+				http.SetCookie(w, &http.Cookie{
+					Name:     cookieName,
+					Value:    signedSessionValue(sess.ID, o.signKey),
+					Path:     o.path,
+					Secure:   o.secure,
+					HttpOnly: o.httpOnly,
+					SameSite: o.sameSite,
+					Expires:  o.now().Add(o.ttl),
+				})
 			}
-		}
-		if err := store.Save(ctx, sess, o.ttl); err != nil && o.logger != nil {
-			o.logger.Warn("会话保存失败", logx.Fields(
-				logx.String("session_id", sess.ID),
-				logx.String("error", err.Error()),
-			))
-		}
+			ctx = context.WithValue(ctx, ctxKeySessionConfig, cfg)
+			ctx = context.WithValue(ctx, ctxKeySession, &sess)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			// 处理器内可能已通过 RotateSession 轮换会话，保存前重新读取最新会话。
+			if p, ok := ctx.Value(ctxKeySession).(*session.Session); ok && p != nil && p.ID != "" {
+				sess = *p
+			}
+			if err := store.Save(ctx, sess, o.ttl); err != nil && o.logger != nil {
+				o.logger.Warn("会话保存失败", logx.Fields(
+					logx.String("session_id", sess.ID),
+					logx.String("error", err.Error()),
+				))
+			}
+		})
 	}
 }
 
@@ -179,24 +176,25 @@ type sessionConfig struct {
 
 // RotateSession 轮换当前会话 ID（防会话固定攻击），并同步更新 Cookie 与上下文。
 // 仅在经过 Session 中间件的处理器中调用；未装配会话或读取会话失败时返回错误。
-func RotateSession(c *webx.Context) error {
-	v, ok := c.Get(ctxKeySessionConfig)
-	if !ok {
+func RotateSession(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	v := ctx.Value(ctxKeySessionConfig)
+	if v == nil {
 		return authx.ErrSessionInvalid
 	}
 	cfg, ok := v.(*sessionConfig)
 	if !ok {
 		return authx.ErrSessionInvalid
 	}
-	sess, ok := SessionFrom(c)
+	sess, ok := SessionFrom(ctx)
 	if !ok || sess.ID == "" {
 		return authx.ErrSessionNotFound
 	}
-	rotated, err := cfg.store.Rotate(c.Request().Context(), sess.ID, cfg.ttl)
+	rotated, err := cfg.store.Rotate(ctx, sess.ID, cfg.ttl)
 	if err != nil {
 		return err
 	}
-	c.SetCookie(&http.Cookie{
+	http.SetCookie(w, &http.Cookie{
 		Name:     cfg.cookieName,
 		Value:    signedSessionValue(rotated.ID, cfg.signKey),
 		Path:     cfg.path,
@@ -205,23 +203,30 @@ func RotateSession(c *webx.Context) error {
 		SameSite: cfg.sameSite,
 		Expires:  cfg.now().Add(cfg.ttl),
 	})
-	c.Set(ctxKeySession, rotated)
+	p, ok := ctx.Value(ctxKeySession).(*session.Session)
+	if !ok || p == nil {
+		return authx.ErrSessionInvalid
+	}
+	*p = rotated
 	return nil
 }
 
 // SessionFrom 从上下文读取会话。
-func SessionFrom(c *webx.Context) (session.Session, bool) {
-	v, ok := c.Get(ctxKeySession)
-	if !ok {
+func SessionFrom(ctx context.Context) (session.Session, bool) {
+	v := ctx.Value(ctxKeySession)
+	if v == nil {
 		return session.Session{}, false
 	}
-	sess, ok := v.(session.Session)
-	return sess, ok
+	p, ok := v.(*session.Session)
+	if !ok || p == nil {
+		return session.Session{}, false
+	}
+	return *p, true
 }
 
 // loadSession 读取 Cookie 并加载会话；缺失或过期返回空会话（由调用方新建）。
-func loadSession(ctx context.Context, store session.Store, c *webx.Context, cookieName string, signKey []byte) (session.Session, error) {
-	cookie, err := c.Cookie(cookieName)
+func loadSession(ctx context.Context, store session.Store, r *http.Request, cookieName string, signKey []byte) (session.Session, error) {
+	cookie, err := r.Cookie(cookieName)
 	if err != nil || cookie.Value == "" || len(cookie.Value) > maxSessionCookieLen {
 		return session.Session{}, nil
 	}

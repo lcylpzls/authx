@@ -18,7 +18,6 @@ import (
 	"github.com/go-oauth2/oauth2/v4/store"
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/errx"
-	"github.com/lcylpzls/webx"
 )
 
 const (
@@ -230,8 +229,8 @@ func TestOAuthErrors(t *testing.T) {
 	}
 }
 
-// TestWebxHandlers 覆盖 webx 适配处理器。
-func TestWebxHandlers(t *testing.T) {
+// TestStandardHandlers 覆盖标准库形态处理器。
+func TestStandardHandlers(t *testing.T) {
 	s, err := NewServer(ServerConfig{
 		ClientID:     testClientID,
 		ClientSecret: testClientSecret,
@@ -247,9 +246,7 @@ func TestWebxHandlers(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, authURL, nil)
 	req = req.WithContext(WithUserID(req.Context(), "u-9"))
 	w := httptest.NewRecorder()
-	c := webx.NewContext(w, req)
-	c.SetHandlers([]webx.HandlerFunc{s.AuthorizeWebxHandler()})
-	c.Run()
+	s.AuthorizeHandler().ServeHTTP(w, req)
 	testx.RequireEqual(t, w.Code, http.StatusFound)
 
 	loc, _ := url.Parse(w.Header().Get("Location"))
@@ -265,18 +262,14 @@ func TestWebxHandlers(t *testing.T) {
 	req2 := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
 	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w2 := httptest.NewRecorder()
-	c2 := webx.NewContext(w2, req2)
-	c2.SetHandlers([]webx.HandlerFunc{s.TokenWebxHandler()})
-	c2.Run()
+	s.TokenHandler().ServeHTTP(w2, req2)
 	if w2.Code != http.StatusOK || !strings.Contains(w2.Body.String(), "access_token") {
-		t.Fatalf("webx 令牌应 200：%d body=%s", w2.Code, w2.Body.String())
+		t.Fatalf("令牌应 200：%d body=%s", w2.Code, w2.Body.String())
 	}
-	// webx 授权端点未登录 → 401。
+	// 授权端点未登录 → 401。
 	req3 := httptest.NewRequest(http.MethodGet, authURL, nil)
 	w3 := httptest.NewRecorder()
-	c3 := webx.NewContext(w3, req3)
-	c3.SetHandlers([]webx.HandlerFunc{s.AuthorizeWebxHandler()})
-	c3.Run()
+	s.AuthorizeHandler().ServeHTTP(w3, req3)
 	testx.RequireEqual(t, w3.Code, http.StatusUnauthorized)
 
 }

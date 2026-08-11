@@ -1,4 +1,4 @@
-package authx
+package core
 
 import (
 	"testing"

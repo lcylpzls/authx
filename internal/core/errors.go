@@ -1,5 +1,5 @@
 // Package authx 提供工业级认证与授权组件，与 errx / logx / webx 深度集成。
-package authx
+package core
 
 import "github.com/lcylpzls/errx"
 

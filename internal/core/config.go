@@ -1,4 +1,4 @@
-package authx
+package core
 
 import (
 	"github.com/lcylpzls/errx"

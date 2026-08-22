@@ -3,6 +3,17 @@
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
 
+## [v1.11.1] - 2026-08-22
+
+### 变更
+
+- 依赖升级：cryptox v1.4.0、errx v1.6.1、idgenx v1.5.2、logx v1.5.2、
+  testx v1.5.1、validx v1.3.1 及三方间接依赖（tidwall 系列、
+  stretchr/testify、x/crypto、x/net 等）更新至家族最新基线，无 API 变更；
+- examples 模块依赖升级（webx v1.7.0、authx v1.10.0 等）并回归：
+  示例改用标准中间件形态（func(http.Handler) http.Handler）与标准
+  net/http OAuth2 处理器，重新可编译、可测试。
+
 ## [v1.10.0] - 2026-08-11
 
 ### 破坏性变更

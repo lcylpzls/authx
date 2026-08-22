@@ -110,7 +110,7 @@ func run() error {
 	guard.RecordFailure("u-1001")
 	fmt.Println("锁定状态：", guard.IsLocked("u-1001"))
 
-	// OAuth2 服务端（webx 适配）。
+	// OAuth2 服务端（标准 net/http 处理器）。
 	oauthSrv, err := oauth2.NewServer(oauth2.ServerConfig{
 		ClientID:     "web",
 		ClientSecret: "secret",
@@ -120,8 +120,8 @@ func run() error {
 		return err
 	}
 	oauthSrv.SetUserAuthorizationHandlerFromContext()
-	_ = oauthSrv.AuthorizeWebxHandler()
-	_ = oauthSrv.TokenWebxHandler()
+	_ = oauthSrv.AuthorizeHandler()
+	_ = oauthSrv.TokenHandler()
 
 	// webx 服务装配（示意）。
 	s := webx.NewServer(webx.Config{}, logger)

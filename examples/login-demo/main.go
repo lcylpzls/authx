@@ -28,6 +28,25 @@ const (
 	sessCookie = "sid"
 )
 
+// stdHandler 将标准库 http.Handler 适配为 webx 路由处理器。
+func stdHandler(h http.Handler) webx.HandlerFunc {
+	return func(c *webx.Context) {
+		h.ServeHTTP(c.Writer(), c.Request())
+	}
+}
+
+// stdMW 将标准库形态中间件（func(http.Handler) http.Handler）适配为 webx 路由中间件。
+func stdMW(mw func(http.Handler) http.Handler) webx.HandlerFunc {
+	return func(c *webx.Context) {
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			c.SetWriter(w)
+			c.SetRequest(r)
+			c.Next()
+		})
+		mw(next).ServeHTTP(c.Writer(), c.Request())
+	}
+}
+
 // user 演示用户。
 type user struct {
 	ID           string
@@ -184,26 +203,26 @@ func newApp() ([]webx.Route, *appDeps, error) {
 	routes := []webx.Route{
 		{Method: http.MethodGet, Path: "/api/csrf", Handler: func(c *webx.Context) {
 			c.Success("就绪", nil)
-		}, Middleware: []webx.HandlerFunc{sessMW, csrfMW}},
+		}, Middleware: []webx.HandlerFunc{stdMW(sessMW), stdMW(csrfMW)}},
 		{Method: http.MethodPost, Path: "/api/register",
-			Handler: registerHandler(deps), Middleware: []webx.HandlerFunc{sessMW, csrfMW}},
+			Handler: registerHandler(deps), Middleware: []webx.HandlerFunc{stdMW(sessMW), stdMW(csrfMW)}},
 		{Method: http.MethodPost, Path: "/api/login",
-			Handler: loginHandler(deps), Middleware: []webx.HandlerFunc{sessMW, csrfMW}},
+			Handler: loginHandler(deps), Middleware: []webx.HandlerFunc{stdMW(sessMW), stdMW(csrfMW)}},
 		{Method: http.MethodGet, Path: "/api/me",
-			Handler: meHandler(deps), Middleware: []webx.HandlerFunc{middleware.Auth(signer)}},
+			Handler: meHandler(deps), Middleware: []webx.HandlerFunc{stdMW(middleware.Auth(signer))}},
 		{Method: http.MethodGet, Path: "/api/admin",
 			Handler: adminHandler(deps),
 			Middleware: []webx.HandlerFunc{
-				middleware.Auth(signer),
-				middleware.RequirePermission(rb, "admin:all"),
+				stdMW(middleware.Auth(signer)),
+				stdMW(middleware.RequirePermission(rb, "admin:all")),
 			}},
 		{Method: http.MethodGet, Path: "/api/mfa/setup",
-			Handler: mfaSetupHandler(deps), Middleware: []webx.HandlerFunc{sessMW}},
+			Handler: mfaSetupHandler(deps), Middleware: []webx.HandlerFunc{stdMW(sessMW)}},
 		{Method: http.MethodPost, Path: "/api/mfa/verify",
-			Handler: mfaVerifyHandler(deps), Middleware: []webx.HandlerFunc{sessMW}},
+			Handler: mfaVerifyHandler(deps), Middleware: []webx.HandlerFunc{stdMW(sessMW)}},
 	}
 
-	// OAuth2 服务端（webx 适配）。
+	// OAuth2 服务端（标准 net/http 处理器，经 stdHandler 挂载）。
 	oauthSrv, err := oauth2.NewServer(oauth2.ServerConfig{
 		ClientID:     "web",
 		ClientSecret: "secret",
@@ -215,9 +234,9 @@ func newApp() ([]webx.Route, *appDeps, error) {
 	oauthSrv.SetUserAuthorizationHandlerFromContext()
 	routes = append(routes,
 		webx.Route{Method: http.MethodGet, Path: "/oauth/authorize",
-			Handler: oauthSrv.AuthorizeWebxHandler(), Middleware: []webx.HandlerFunc{sessMW}},
+			Handler: stdHandler(oauthSrv.AuthorizeHandler()), Middleware: []webx.HandlerFunc{stdMW(sessMW)}},
 		webx.Route{Method: http.MethodPost, Path: "/oauth/token",
-			Handler: oauthSrv.TokenWebxHandler()},
+			Handler: stdHandler(oauthSrv.TokenHandler())},
 	)
 	return routes, deps, nil
 }
@@ -276,11 +295,11 @@ func loginHandler(d *appDeps) webx.HandlerFunc {
 		}
 		d.guard.Reset(req.Username)
 		// 登录成功后轮换会话，防会话固定。
-		if err := middleware.RotateSession(c); err != nil {
+		if err := middleware.RotateSession(c.Writer(), c.Request()); err != nil {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, err.Error(), nil)
 			return
 		}
-		if sess, ok := middleware.SessionFrom(c); ok {
+		if sess, ok := middleware.SessionFrom(c.Request().Context()); ok {
 			sess.Values["uid"] = u.ID
 		}
 		raw, err := d.signer.Sign(u.ID, token.WithRoles(u.Roles...))
@@ -296,7 +315,7 @@ func loginHandler(d *appDeps) webx.HandlerFunc {
 // meHandler 返回当前登录用户。
 func meHandler(d *appDeps) webx.HandlerFunc {
 	return func(c *webx.Context) {
-		claims, _ := middleware.ClaimsFrom(c)
+		claims, _ := middleware.ClaimsFrom(c.Request().Context())
 		c.Success("当前用户", map[string]any{
 			"user_id": claims.Subject,
 			"roles":   claims.Roles,
@@ -314,7 +333,7 @@ func adminHandler(d *appDeps) webx.HandlerFunc {
 // mfaSetupHandler 返回当前会话用户的 TOTP 密钥。
 func mfaSetupHandler(d *appDeps) webx.HandlerFunc {
 	return func(c *webx.Context) {
-		sess, ok := middleware.SessionFrom(c)
+		sess, ok := middleware.SessionFrom(c.Request().Context())
 		if !ok || sess.Values["uid"] == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, "请先登录", nil)
 			return
@@ -331,7 +350,7 @@ func mfaSetupHandler(d *appDeps) webx.HandlerFunc {
 // mfaVerifyHandler 校验 TOTP 验证码。
 func mfaVerifyHandler(d *appDeps) webx.HandlerFunc {
 	return func(c *webx.Context) {
-		sess, ok := middleware.SessionFrom(c)
+		sess, ok := middleware.SessionFrom(c.Request().Context())
 		if !ok || sess.Values["uid"] == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, "请先登录", nil)
 			return

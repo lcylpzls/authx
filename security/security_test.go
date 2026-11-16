@@ -1,6 +1,8 @@
 package security
 
 import (
+	"context"
+	"errors"
 	testx "github.com/lcylpzls/testx"
 	"testing"
 	"time"
@@ -24,6 +26,10 @@ func TestNewErrors(t *testing.T) {
 	if _, err := NewLoginGuard(3, time.Minute, WithClock(nil)); err == nil ||
 		!errx.Is(err, authx.CodeSecurityConfigInvalid) {
 		t.Fatalf("空时间源应报错，实际：%v", err)
+	}
+	if _, err := NewLoginGuard(3, time.Minute, WithGuardStore(nil)); err == nil ||
+		!errx.Is(err, authx.CodeSecurityConfigInvalid) {
+		t.Fatalf("空存储应报错，实际：%v", err)
 	}
 }
 
@@ -196,4 +202,160 @@ func TestLoginGuardStartCleanup(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// TestSharedGuardStore 覆盖多实例共享状态、成功复位和自动解锁。
+func TestSharedGuardStore(t *testing.T) {
+	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryGuardStore(defaultMaxEntries)
+	newGuard := func() *LoginGuard {
+		g, err := NewLoginGuard(2, time.Minute,
+			WithClock(func() time.Time { return now }),
+			WithGuardStore(store))
+		testx.RequireNoError(t, err)
+		return g
+	}
+	first, second := newGuard(), newGuard()
+
+	_ = first.RecordFailure("u-1")
+	_ = first.RecordFailure("u-1")
+	if !second.IsLocked("u-1") {
+		t.Fatal("共享存储应跨实例看到锁定状态")
+	}
+	second.Reset("u-1")
+	if first.IsLocked("u-1") {
+		t.Fatal("共享复位后应立即解锁")
+	}
+
+	_ = second.RecordFailure("u-2")
+	_ = second.RecordFailure("u-2")
+	now = now.Add(2 * time.Minute)
+	if first.IsLocked("u-2") {
+		t.Fatal("锁定期到达后应自动解锁")
+	}
+}
+
+// TestGuardStoreErrors 覆盖自定义存储故障时默认 fail-closed 与错误透传。
+func TestGuardStoreErrors(t *testing.T) {
+	sentinel := errors.New("存储故障")
+	store := &failingGuardStore{err: sentinel}
+	g, err := NewLoginGuard(2, time.Minute, WithGuardStore(store))
+	testx.RequireNoError(t, err)
+
+	if !g.RecordFailure("u-1") {
+		t.Fatal("记录失败发生存储故障时应按锁定处理")
+	}
+	if !g.IsLocked("u-1") {
+		t.Fatal("查询发生存储故障时应按锁定处理")
+	}
+	if locked, err := g.RecordFailureContext(context.Background(), "u-1"); locked ||
+		!errors.Is(err, sentinel) {
+		t.Fatalf("应透传存储错误：locked=%v err=%v", locked, err)
+	}
+	if locked, err := g.IsLockedContext(context.Background(), "u-1"); locked ||
+		!errors.Is(err, sentinel) {
+		t.Fatalf("应透传查询错误：locked=%v err=%v", locked, err)
+	}
+	if err := g.ResetContext(context.Background(), "u-1"); !errors.Is(err, sentinel) {
+		t.Fatalf("应透传复位错误：%v", err)
+	}
+	g.Reset("u-1")
+	if _, err := g.CleanupContext(context.Background()); !errors.Is(err, sentinel) {
+		t.Fatalf("应透传清理错误：%v", err)
+	}
+	if n := g.Cleanup(); n != 0 {
+		t.Fatalf("清理故障应返回零，实际：%d", n)
+	}
+}
+
+// TestMemoryGuardStoreValidation 覆盖存储独立调用时拒绝非法策略。
+func TestMemoryGuardStoreValidation(t *testing.T) {
+	store := NewMemoryGuardStore(1)
+	now := time.Now()
+	if _, err := store.RecordFailure(context.Background(), "u", now, GuardPolicy{}); err == nil ||
+		!errx.Is(err, authx.CodeSecurityConfigInvalid) {
+		t.Fatalf("非法记录策略应报错，实际：%v", err)
+	}
+	if _, err := store.Cleanup(context.Background(), now, GuardPolicy{}); err == nil ||
+		!errx.Is(err, authx.CodeSecurityConfigInvalid) {
+		t.Fatalf("非法清理策略应报错，实际：%v", err)
+	}
+}
+
+// TestNewMemoryGuardStorePanic 覆盖非法容量。
+func TestNewMemoryGuardStorePanic(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("非正容量应 panic")
+		}
+	}()
+	NewMemoryGuardStore(0)
+}
+
+// TestStartCleanupCallsStore 覆盖周期任务对 GuardStore.Cleanup 的调用。
+func TestStartCleanupCallsStore(t *testing.T) {
+	store := &cleanupSignalStore{called: make(chan struct{}, 1)}
+	g, err := NewLoginGuard(2, time.Minute, WithGuardStore(store))
+	testx.RequireNoError(t, err)
+	handle := g.StartCleanup(10 * time.Millisecond)
+	defer handle.Stop()
+	select {
+	case <-store.called:
+	case <-time.After(3 * time.Second):
+		t.Fatal("周期清理未调用存储")
+	}
+}
+
+type failingGuardStore struct {
+	err error
+}
+
+type cleanupSignalStore struct {
+	called chan struct{}
+}
+
+func (s *cleanupSignalStore) RecordFailure(
+	context.Context,
+	string,
+	time.Time,
+	GuardPolicy,
+) (bool, error) {
+	return false, nil
+}
+
+func (s *cleanupSignalStore) IsLocked(context.Context, string, time.Time) (bool, error) {
+	return false, nil
+}
+
+func (s *cleanupSignalStore) Reset(context.Context, string) error {
+	return nil
+}
+
+func (s *cleanupSignalStore) Cleanup(context.Context, time.Time, GuardPolicy) (int, error) {
+	select {
+	case s.called <- struct{}{}:
+	default:
+	}
+	return 0, nil
+}
+
+func (s *failingGuardStore) RecordFailure(
+	context.Context,
+	string,
+	time.Time,
+	GuardPolicy,
+) (bool, error) {
+	return false, s.err
+}
+
+func (s *failingGuardStore) IsLocked(context.Context, string, time.Time) (bool, error) {
+	return false, s.err
+}
+
+func (s *failingGuardStore) Reset(context.Context, string) error {
+	return s.err
+}
+
+func (s *failingGuardStore) Cleanup(context.Context, time.Time, GuardPolicy) (int, error) {
+	return 0, s.err
 }

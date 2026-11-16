@@ -7,7 +7,8 @@
 - 授权：RBAC 角色/权限模型（支持角色继承与环检测）；
 - 集成：标准 net/http 认证/权限/CSRF 中间件
   （`func(http.Handler) http.Handler`，可插拔到任意标准库 Web 服务）；
-- 会话：Session 存储接口 + 内存实现 + 标准会话中间件（自动落库）；
+- 会话：Session 存储接口 + 内存实现 + 标准会话中间件（自动落库、
+  空闲期限与绝对期限）；
 - 多因素：TOTP（RFC 6238）与恢复码；
 - OAuth2：客户端（授权码 + PKCE）与服务端（授权码 + PKCE + 刷新令牌）；
 - 审计：结构化审计日志（logx 集成）+ 持久化钩子；
@@ -87,6 +88,39 @@ defer sessCleanup.Stop()
 存储默认容量上限 10 万条，满时新增条目返回 `ErrStoreFull`；
 可通过 `NewXxxWithLimit` 或 `WithMaxEntries` 调整。
 
+## 会话期限与 CSRF 绑定
+
+`WithSessionTTL` 设置空闲期限，活跃请求会自动续期；
+`WithSessionAbsoluteTTL` 设置从创建时起算、不可续期的绝对期限。
+绝对期限需要自定义 `session.Store` 同时实现 `session.ExpiryStore`，
+默认 `session.MemoryStore` 已实现该接口。
+
+```go
+sessStore := session.NewMemoryStore(nil)
+sessMW := middleware.Session(sessStore, "sid",
+	middleware.WithSessionTTL(30*time.Minute),
+	middleware.WithSessionAbsoluteTTL(12*time.Hour))
+csrfMW := middleware.SessionCSRFProtect("csrf", "X-CSRF-Token",
+	middleware.WithCSRFAllowedOrigins("https://app.example.com"))
+
+handler = sessMW(csrfMW(handler))
+```
+
+登录或改密成功后调用 `middleware.RotateSession`，注销时调用
+`middleware.DeleteSession`。装配 `SessionCSRFProtect` 后，这两个函数
+会同步轮换或删除 CSRF 状态；原有 `CSRF` / `CSRFProtect` 双提交中间件
+保持独立兼容。
+
+## 密码长度与登录守卫
+
+`password.StrengthConfig` 的 `MinLength` / `MaxLength` 按 Unicode
+码点计数，组合字符按多个码点计；明文另有 1024 字节硬上限。
+
+`security.LoginGuard` 默认使用进程内 `MemoryGuardStore`。多实例部署可通过
+`security.WithGuardStore` 注入应用层实现，并使用
+`RecordFailureContext` / `IsLockedContext` / `ResetContext` /
+`CleanupContext` 透传存储错误。旧的布尔 API 在存储故障时按已锁定处理。
+
 ## 版本路线
 
 | 版本 | 内容 |
@@ -111,6 +145,7 @@ defer sessCleanup.Stop()
 | v0.18.0 | 边界与并发打磨：TTL 精确边界矩阵、并发 bench、九目标 fuzz（已发布） |
 | v0.19.0 | 发布前终审：清理任务 panic 恢复、依赖整理、并发/泄漏终审（已发布，版本线完成） |
 | v1.0.0 | 正式版：进入语义化版本稳定期，v1.x 起承诺无破坏性 API 变更（已发布） |
+| v1.12.0 | 多实例登录守卫、会话双期限、会话绑定 CSRF、Unicode 密码长度与 Go 1.27.4（已发布） |
 
 > 版本策略说明：自家族统一约定起，破坏性变更走 minor 版本
 > （不强制主版本升级），实际变更以 CHANGELOG 为准。

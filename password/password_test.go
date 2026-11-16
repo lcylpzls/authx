@@ -233,6 +233,34 @@ func TestStrengthCheck(t *testing.T) {
 	}
 }
 
+// TestStrengthUnicodeLength 覆盖 Unicode 码点计数与独立字节上限。
+func TestStrengthUnicodeLength(t *testing.T) {
+	cfg := StrengthConfig{MinLength: 12, MaxLength: 12}
+	for _, plain := range []string{
+		strings.Repeat("密", 12),
+		"🔐🔑🧩🧠🚀🌟🎯💡🔥🌱🎵📚",
+	} {
+		if err := cfg.Check(plain); err != nil {
+			t.Fatalf("12 个 Unicode 码点应通过：%q，实际：%v", plain, err)
+		}
+	}
+	if err := cfg.Check(strings.Repeat("密", 11)); err == nil ||
+		!errx.Is(err, authx.CodePasswordTooShort) {
+		t.Fatalf("11 个 Unicode 码点应报过短，实际：%v", err)
+	}
+
+	combining := StrengthConfig{MinLength: 2, MaxLength: 2}
+	if err := combining.Check("e\u0301"); err != nil {
+		t.Fatalf("组合字符按两个码点计数：%v", err)
+	}
+
+	tooManyBytes := StrengthConfig{MinLength: 1, MaxLength: 1024}
+	if err := tooManyBytes.Check(strings.Repeat("🙂", 257)); err == nil ||
+		!errx.Is(err, authx.CodePasswordTooLong) {
+		t.Fatalf("超过 1024 字节应报过长，实际：%v", err)
+	}
+}
+
 // TestHashWithStrength 覆盖带强度策略的哈希。
 func TestHashWithStrength(t *testing.T) {
 	cfg := authx.DefaultPasswordConfig()

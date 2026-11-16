@@ -272,7 +272,7 @@ func TestVerifySessionCookie(t *testing.T) {
 func TestRotateSessionEdgeCases(t *testing.T) {
 	ctx := context.Background()
 	cfg := &sessionConfig{store: session.NewMemoryStore(nil), cookieName: "sid",
-		ttl: time.Hour, secure: false, now: time.Now}
+		lifetime: session.Lifetime{IdleTTL: time.Hour}, secure: false, now: time.Now}
 
 	req1 := httptest.NewRequest(http.MethodGet, "/ping", nil).WithContext(
 		context.WithValue(ctx, ctxKeySessionConfig, "not-config"))

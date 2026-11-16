@@ -7,8 +7,8 @@ HTTP 状态码由 Kind 映射（默认中间件响应见 [middleware](README.md)
 | --- | --- | --- | --- |
 | `authx_password_hash_invalid` | 密码哈希格式无效或损坏 | invalid_argument | 400 |
 | `authx_password_mismatch` | 明文与哈希不匹配（未认证） | unauthorized | 401 |
-| `authx_password_too_long` | 明文密码超过长度上限 | invalid_argument | 400 |
-| `authx_password_too_short` | 明文密码低于长度下限 | invalid_argument | 400 |
+| `authx_password_too_long` | 明文密码超过 Unicode 码点或字节上限 | invalid_argument | 400 |
+| `authx_password_too_short` | 明文密码低于 Unicode 码点下限 | invalid_argument | 400 |
 | `authx_password_too_weak` | 明文密码不满足强度策略 | invalid_argument | 400 |
 | `authx_password_config_invalid` | 哈希参数非法 | invalid_argument | 400 |
 | `authx_password_internal` | 哈希/校验内部失败 | unavailable | 503 |
@@ -29,7 +29,7 @@ HTTP 状态码由 Kind 映射（默认中间件响应见 [middleware](README.md)
 | `authx_rbac_invalid` | 角色/权限参数非法 | invalid_argument | 400 |
 | `authx_csrf_mismatch` | CSRF 校验不通过 | forbidden | 403 |
 | `authx_csrf_generation_failed` | CSRF 令牌生成失败 | unavailable | 503 |
-| `authx_session_not_found` | 会话不存在或已过期 | unauthorized | 401 |
+| `authx_session_not_found` | 会话不存在、空闲过期或绝对过期 | unauthorized | 401 |
 | `authx_session_invalid` | 会话参数非法 | invalid_argument | 400 |
 | `authx_session_store_invalid` | 会话存储不可用 | unavailable | 503 |
 | `authx_mfa_invalid` | MFA 参数非法（密钥/验证码） | invalid_argument | 400 |

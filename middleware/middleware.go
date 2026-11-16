@@ -26,14 +26,16 @@ const (
 	ctxKeyUserID
 	ctxKeySession
 	ctxKeySessionConfig
+	ctxKeyCSRFConfig
 )
 
 const (
-	maxBearerLength    = 4096 // Bearer 令牌长度上限（防超长头 DoS）
-	maxCSRFTokenLength = 256  // CSRF 令牌长度上限（防超长值 DoS）
-	csrfTokenBytes     = 32
-	defaultCSRFTTL     = 24 * time.Hour
-	maxOriginLength    = 2048 // Origin/Referer 长度上限
+	maxBearerLength     = 4096 // Bearer 令牌长度上限（防超长头 DoS）
+	maxCSRFTokenLength  = 256  // CSRF 令牌长度上限（防超长值 DoS）
+	csrfTokenBytes      = 32
+	defaultCSRFTTL      = 24 * time.Hour
+	maxOriginLength     = 2048 // Origin/Referer 长度上限
+	sessionCSRFTokenKey = "authx.csrf_token"
 )
 
 // csrfRand 可替换的 CSRF 令牌随机源，便于测试注入失败场景。
@@ -296,24 +298,7 @@ func CSRFProtect(cookieName, headerName string, opts ...CSRFOption) func(http.Ha
 	if cookieName == "" || headerName == "" {
 		panic("authx: CSRF Cookie 与请求头名称不能为空")
 	}
-	o := &csrfOptions{
-		secure:   true,
-		httpOnly: false,
-		path:     "/",
-		sameSite: http.SameSiteLaxMode,
-		ttl:      defaultCSRFTTL,
-		now:      time.Now,
-		err:      DefaultErrorHandler,
-	}
-	for _, opt := range opts {
-		opt(o)
-	}
-	if o.ttl <= 0 {
-		panic("authx: CSRF 有效期必须为正")
-	}
-	if o.now == nil {
-		o.now = time.Now
-	}
+	o := newCSRFOptions(opts...)
 	skip := map[string]bool{
 		http.MethodGet:     true,
 		http.MethodHead:    true,
@@ -327,15 +312,7 @@ func CSRFProtect(cookieName, headerName string, opts ...CSRFOption) func(http.Ha
 					o.err(w, r, http.StatusInternalServerError, authx.ErrCSRFGenerationFailed)
 					return
 				}
-				http.SetCookie(w, &http.Cookie{
-					Name:     cookieName,
-					Value:    token,
-					Path:     o.path,
-					Secure:   o.secure,
-					HttpOnly: o.httpOnly,
-					SameSite: o.sameSite,
-					Expires:  o.now().Add(o.ttl),
-				})
+				setCSRFCookie(w, o, cookieName, token)
 			}
 			if skip[r.Method] {
 				next.ServeHTTP(w, r)
@@ -356,6 +333,126 @@ func CSRFProtect(cookieName, headerName string, opts ...CSRFOption) func(http.Ha
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func newCSRFOptions(opts ...CSRFOption) *csrfOptions {
+	o := &csrfOptions{
+		secure:   true,
+		httpOnly: false,
+		path:     "/",
+		sameSite: http.SameSiteLaxMode,
+		ttl:      defaultCSRFTTL,
+		now:      time.Now,
+		err:      DefaultErrorHandler,
+	}
+	for _, opt := range opts {
+		opt(o)
+	}
+	if o.ttl <= 0 {
+		panic("authx: CSRF 有效期必须为正")
+	}
+	if o.now == nil {
+		o.now = time.Now
+	}
+	return o
+}
+
+type sessionCSRFConfig struct {
+	cookieName string
+	options    *csrfOptions
+}
+
+// SessionCSRFProtect 构造与会话绑定的 CSRF 中间件。
+// 必须安装在 Session 中间件下游；非安全方法同时校验 Cookie 与请求头一致、
+// 令牌属于当前服务端会话，以及可选的 Origin/Referer 白名单。
+func SessionCSRFProtect(
+	cookieName, headerName string,
+	opts ...CSRFOption,
+) func(http.Handler) http.Handler {
+	if cookieName == "" || headerName == "" {
+		panic("authx: CSRF Cookie 与请求头名称不能为空")
+	}
+	o := newCSRFOptions(opts...)
+	cfg := &sessionCSRFConfig{cookieName: cookieName, options: o}
+	skip := map[string]bool{
+		http.MethodGet:     true,
+		http.MethodHead:    true,
+		http.MethodOptions: true,
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			sess, ok := sessionPointer(ctx)
+			if !ok {
+				o.err(w, r, http.StatusInternalServerError, authx.ErrSessionNotFound)
+				return
+			}
+			token := sess.Values[sessionCSRFTokenKey]
+			if token == "" {
+				generated, err := GenerateCSRFToken()
+				if err != nil {
+					o.err(w, r, http.StatusInternalServerError, authx.ErrCSRFGenerationFailed)
+					return
+				}
+				if sess.Values == nil {
+					sess.Values = make(map[string]string)
+				}
+				sess.Values[sessionCSRFTokenKey] = generated
+				token = generated
+			}
+			if skip[r.Method] {
+				setCSRFCookie(w, o, cookieName, token)
+			}
+			ctx = context.WithValue(ctx, ctxKeyCSRFConfig, cfg)
+			r = r.WithContext(ctx)
+			if skip[r.Method] {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if !o.originAllowed(r) {
+				o.err(w, r, http.StatusForbidden, authx.ErrCSRFMismatch)
+				return
+			}
+			cookie, err := r.Cookie(cookieName)
+			if err != nil ||
+				!ValidateCSRFToken(token, cookie.Value) ||
+				!ValidateCSRFToken(cookie.Value, r.Header.Get(headerName)) {
+				o.err(w, r, http.StatusForbidden, authx.ErrCSRFMismatch)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func sessionCSRFConfigFrom(ctx context.Context) (*sessionCSRFConfig, bool) {
+	cfg, ok := ctx.Value(ctxKeyCSRFConfig).(*sessionCSRFConfig)
+	return cfg, ok && cfg != nil && cfg.options != nil
+}
+
+func setCSRFCookie(w http.ResponseWriter, o *csrfOptions, cookieName, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    token,
+		Path:     o.path,
+		Secure:   o.secure,
+		HttpOnly: o.httpOnly,
+		SameSite: o.sameSite,
+		Expires:  o.now().Add(o.ttl),
+	})
+}
+
+func clearCSRFCookie(w http.ResponseWriter, o *csrfOptions, cookieName string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    "",
+		Path:     o.path,
+		Secure:   o.secure,
+		HttpOnly: o.httpOnly,
+		SameSite: o.sameSite,
+		MaxAge:   -1,
+		Expires:  time.Unix(1, 0),
+	})
 }
 
 // originAllowed 校验非安全请求的来源；未配置允许列表时直接放行。

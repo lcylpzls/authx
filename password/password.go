@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/cryptox"
@@ -14,8 +15,8 @@ import (
 )
 
 const (
-	minPlainLength = 8    // 新密码最短长度
-	maxPlainLength = 1024 // 明文长度上限（防 DoS）
+	minPlainLength = 8    // 新密码最短字符数
+	maxPlainLength = 1024 // 明文最大字节数（防 DoS）
 	// 解析哈希时的参数上限（防恶意哈希引发超大内存/CPU 开销）。
 	maxMemoryKiB     = 1 << 18 // 256 MiB
 	maxIterations    = 1000
@@ -58,10 +59,15 @@ func init() {
 		if max <= 0 {
 			max = maxPlainLength
 		}
+		// 先按字节拒绝超长输入，再按 Unicode 码点执行字符长度策略。
+		if len(plain) > maxPlainLength {
+			return authx.ErrPasswordTooLong
+		}
+		length := utf8.RuneCountInString(plain)
 		switch {
-		case len(plain) < min:
+		case length < min:
 			return authx.ErrPasswordTooShort
-		case len(plain) > max:
+		case length > max:
 			return authx.ErrPasswordTooLong
 		}
 		var hasUpper, hasLower, hasDigit, hasSymbol bool
@@ -117,9 +123,10 @@ func (c StrengthConfig) ruleParam() string {
 // StrengthConfig 可选的密码强度策略；零值表示仅使用默认长度规则。
 // 字段为 0 或 false 时对应规则不启用。
 type StrengthConfig struct {
-	// MinLength 最小长度；0 表示沿用默认下限（8）。
+	// MinLength 最小 Unicode 码点数；0 表示沿用默认下限（8）。
 	MinLength int
-	// MaxLength 最大长度；0 表示沿用默认上限（1024）。
+	// MaxLength 最大 Unicode 码点数；0 表示沿用默认上限（1024）。
+	// 明文仍受 1024 字节的独立上限约束。
 	MaxLength int
 	// RequireUpper 要求至少一个大写字母。
 	RequireUpper bool

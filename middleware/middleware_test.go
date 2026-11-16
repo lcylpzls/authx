@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/lcylpzls/authx"
 	"github.com/lcylpzls/authx/rbac"
+	"github.com/lcylpzls/authx/session"
 	"github.com/lcylpzls/authx/token"
 )
 
@@ -397,4 +399,163 @@ func TestCSRFOptions(t *testing.T) {
 		}()
 		WithCSRFErrorHandler(nil)(&csrfOptions{})
 	}()
+}
+
+// TestSessionCSRFBinding 覆盖会话绑定、跨会话拒绝和来源校验。
+func TestSessionCSRFBinding(t *testing.T) {
+	store := session.NewMemoryStore(nil)
+	sessionMW := Session(store, "sid", WithSessionSecure(false))
+	csrfMW := SessionCSRFProtect("csrf", "X-CSRF",
+		WithCSRFSecure(false),
+		WithCSRFAllowedOrigins("https://app.example.com"))
+	chain := sessionMW(csrfMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})))
+
+	seed := httptest.NewRecorder()
+	chain.ServeHTTP(seed, httptest.NewRequest(http.MethodGet, "/seed", nil))
+	testx.RequireEqual(t, seed.Code, http.StatusNoContent)
+	sid := cookieByName(seed.Result().Cookies(), "sid")
+	csrf := cookieByName(seed.Result().Cookies(), "csrf")
+	testx.RequireNotNil(t, sid)
+	testx.RequireNotNil(t, csrf)
+
+	post := func(sessionCookie, csrfCookie *http.Cookie, header, origin string) int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/change", nil)
+		req.AddCookie(sessionCookie)
+		req.AddCookie(csrfCookie)
+		req.Header.Set("X-CSRF", header)
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		chain.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	testx.RequireEqual(t, post(sid, csrf, csrf.Value, "https://app.example.com"),
+		http.StatusNoContent)
+	testx.RequireEqual(t, post(sid, csrf, "wrong", "https://app.example.com"),
+		http.StatusForbidden)
+	testx.RequireEqual(t, post(sid, csrf, csrf.Value, "https://evil.example.com"),
+		http.StatusForbidden)
+
+	second := httptest.NewRecorder()
+	sessionMW(csrfMW(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))).ServeHTTP(
+		second, httptest.NewRequest(http.MethodGet, "/seed", nil))
+	foreign := cookieByName(second.Result().Cookies(), "csrf")
+	testx.RequireNotNil(t, foreign)
+	testx.RequireEqual(t, post(sid, foreign, foreign.Value, "https://app.example.com"),
+		http.StatusForbidden)
+}
+
+// TestSessionCSRFRotation 覆盖会话轮换时同步更换 CSRF 令牌。
+func TestSessionCSRFRotation(t *testing.T) {
+	store := session.NewMemoryStore(nil)
+	sessionMW := Session(store, "sid", WithSessionSecure(false))
+	csrfMW := SessionCSRFProtect("csrf", "X-CSRF", WithCSRFSecure(false))
+	var oldSID, oldToken string
+	var rotatedSID, rotatedToken string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sess, _ := SessionFrom(r.Context())
+		oldSID = sess.ID
+		oldToken = sess.Values[sessionCSRFTokenKey]
+		testx.RequireNoError(t, RotateSession(w, r))
+		rotated, _ := SessionFrom(r.Context())
+		rotatedSID = rotated.ID
+		rotatedToken = rotated.Values[sessionCSRFTokenKey]
+		w.WriteHeader(http.StatusNoContent)
+	})
+	chain := sessionMW(csrfMW(handler))
+	rec := httptest.NewRecorder()
+	chain.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/rotate", nil))
+	testx.RequireNotEqual(t, oldSID, rotatedSID)
+	testx.RequireNotEqual(t, oldToken, rotatedToken)
+	csrfCookie := lastCookieByName(rec.Result().Cookies(), "csrf")
+	testx.RequireNotNil(t, csrfCookie)
+	testx.RequireEqual(t, csrfCookie.Value, rotatedToken)
+}
+
+// TestSessionCSRFErrors 覆盖缺少会话、令牌生成失败与 Cookie 缺失。
+func TestSessionCSRFErrors(t *testing.T) {
+	for _, fn := range []func(){
+		func() { _ = SessionCSRFProtect("", "X") },
+		func() { _ = SessionCSRFProtect("c", "") },
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("非法参数应 panic")
+				}
+			}()
+			fn()
+		}()
+	}
+
+	csrfMW := SessionCSRFProtect("csrf", "X-CSRF", WithCSRFSecure(false))
+	rec := httptest.NewRecorder()
+	csrfMW(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).ServeHTTP(
+		rec, httptest.NewRequest(http.MethodGet, "/missing-session", nil))
+	testx.RequireEqual(t, rec.Code, http.StatusInternalServerError)
+
+	orig := csrfRand
+	csrfRand = func(int) (string, error) { return "", errors.New("随机源失败") }
+	defer func() { csrfRand = orig }()
+	store := session.NewMemoryStore(nil)
+	chain := Session(store, "sid", WithSessionSecure(false))(
+		csrfMW(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})))
+	rec2 := httptest.NewRecorder()
+	chain.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/seed", nil))
+	testx.RequireEqual(t, rec2.Code, http.StatusInternalServerError)
+}
+
+// TestSessionCSRFMissingCookieAndNilValues 覆盖无 Cookie 拒绝与空值建表。
+func TestSessionCSRFMissingCookieAndNilValues(t *testing.T) {
+	cfg := &sessionConfig{
+		store:      session.NewMemoryStore(nil),
+		cookieName: "sid",
+		lifetime:   session.Lifetime{IdleTTL: time.Hour},
+		now:        time.Now,
+	}
+	sess := &session.Session{ID: "s-1"}
+	ctx := context.WithValue(context.Background(), ctxKeySessionConfig, cfg)
+	ctx = context.WithValue(ctx, ctxKeySession, sess)
+	mw := SessionCSRFProtect("csrf", "X-CSRF", WithCSRFSecure(false))
+	rec := httptest.NewRecorder()
+	mw(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).ServeHTTP(
+		rec, httptest.NewRequest(http.MethodGet, "/seed", nil).WithContext(ctx))
+	testx.RequireNotNil(t, cookieByName(rec.Result().Cookies(), "csrf"))
+	testx.RequireNotEqual(t, sess.Values[sessionCSRFTokenKey], "")
+
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodPost, "/change", nil)
+	req2 = req2.WithContext(ctx)
+	req2.Header.Set("X-CSRF", sess.Values[sessionCSRFTokenKey])
+	mw(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).ServeHTTP(rec2, req2)
+	testx.RequireEqual(t, rec2.Code, http.StatusForbidden)
+}
+
+// TestDeleteSessionCSRFCookie 覆盖登出时同时失效 CSRF Cookie。
+func TestDeleteSessionCSRFCookie(t *testing.T) {
+	store := session.NewMemoryStore(nil)
+	sessionMW := Session(store, "sid", WithSessionSecure(false))
+	csrfMW := SessionCSRFProtect("csrf", "X-CSRF", WithCSRFSecure(false))
+	chain := sessionMW(csrfMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		testx.RequireNoError(t, DeleteSession(w, r))
+	})))
+	rec := httptest.NewRecorder()
+	chain.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/logout", nil))
+	csrfCookie := lastCookieByName(rec.Result().Cookies(), "csrf")
+	testx.RequireNotNil(t, csrfCookie)
+	testx.RequireEqual(t, csrfCookie.MaxAge, -1)
+}
+
+func lastCookieByName(cookies []*http.Cookie, name string) *http.Cookie {
+	var result *http.Cookie
+	for _, cookie := range cookies {
+		if cookie.Name == name {
+			result = cookie
+		}
+	}
+	return result
 }

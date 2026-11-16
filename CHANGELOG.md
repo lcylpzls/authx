@@ -2,6 +2,31 @@
 
 本项目遵循语义化版本（SemVer）。v1.0.0 之前允许破坏性变更。
 
+## [v1.12.0] - 2026-11-16
+
+### 新增
+
+- password：密码长度策略按 Unicode 码点计数，并保留 1024 字节独立上限；
+- security：新增可插拔 `GuardStore`、默认 `MemoryGuardStore`、
+  `WithGuardStore` 与带 `context.Context` 的守卫方法；
+- session：新增 `Lifetime`、`ExpiryStore`、会话空闲/绝对期限字段，
+  活跃请求刷新 Cookie 到期时间但不能突破绝对期限；
+- middleware：新增 `WithSessionAbsoluteTTL`、`SessionCSRFProtect`、
+  `DeleteSession`；会话轮换时同步轮换 CSRF 令牌，注销时删除服务端会话
+  与会话绑定 CSRF Cookie。
+
+### 构建
+
+- Go 工具链基线升级至 1.27.4，主模块、examples、CI 与 Release 工作流同步。
+
+### 兼容性
+
+- 原有 `session.Store`、`NewLoginGuard`、`Session`、`CSRF` 和
+  `CSRFProtect` 调用方式继续可用；
+- 启用会话绝对期限时，自定义 `session.Store` 必须同时实现
+  `session.ExpiryStore`；
+- `password.StrengthConfig` 的长度单位由字节改为 Unicode 码点，
+  非 ASCII 密码的判定结果可能与旧版本不同。
 
 ## [v1.11.1] - 2026-08-22
 

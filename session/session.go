@@ -29,10 +29,18 @@ func validSessionArg(value any, rules string) error {
 	return nil
 }
 
-// Session 会话数据：ID 与键值对（业务可扩展）。
+// Session 会话数据：ID、键值对与存储无关的期限元数据。
 type Session struct {
-	ID     string
-	Values map[string]string
+	ID                string
+	Values            map[string]string
+	IdleExpiresAt     time.Time
+	AbsoluteExpiresAt time.Time
+}
+
+// Lifetime 描述会话的空闲期限与绝对期限；AbsoluteTTL 为 0 表示不设绝对期限。
+type Lifetime struct {
+	IdleTTL     time.Duration
+	AbsoluteTTL time.Duration
 }
 
 // Store 会话存储接口。
@@ -50,10 +58,20 @@ type Store interface {
 	Rotate(ctx context.Context, id string, ttl time.Duration) (Session, error)
 }
 
+// ExpiryStore 是可选的会话期限存储扩展。
+// 需要使用绝对期限时，自定义 Store 必须同时实现该接口。
+type ExpiryStore interface {
+	// CreateWithLifetime 创建会话并同时保存空闲与绝对期限。
+	CreateWithLifetime(ctx context.Context, lifetime Lifetime) (Session, error)
+	// SaveWithLifetime 保存会话；已有绝对期限不能被后续保存延长。
+	SaveWithLifetime(ctx context.Context, s Session, lifetime Lifetime) error
+	// RotateWithLifetime 轮换 ID、保留绝对期限并重置空闲期限。
+	RotateWithLifetime(ctx context.Context, id string, lifetime Lifetime) (Session, error)
+}
+
 // sessionItem 内存条目。
 type sessionItem struct {
 	session Session
-	expires time.Time
 }
 
 // MemoryStore 内存会话存储（进程内单实例场景）。
@@ -83,11 +101,17 @@ func NewMemoryStoreWithLimit(now func() time.Time, maxEntries int) *MemoryStore 
 
 // Create 创建并保存新会话。
 func (s *MemoryStore) Create(ctx context.Context, ttl time.Duration) (Session, error) {
-	if err := validSessionArg(ttl, "gt=0"); err != nil {
+	return s.CreateWithLifetime(ctx, Lifetime{IdleTTL: ttl})
+}
+
+// CreateWithLifetime 创建并保存带空闲与绝对期限的新会话。
+func (s *MemoryStore) CreateWithLifetime(ctx context.Context, lifetime Lifetime) (Session, error) {
+	if err := validateLifetime(lifetime); err != nil {
 		return Session{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := s.now()
 	for attempt := 0; attempt < createRetry; attempt++ {
 		id, err := newSessionID()
 		if err != nil {
@@ -99,9 +123,14 @@ func (s *MemoryStore) Create(ctx context.Context, ttl time.Duration) (Session, e
 		if len(s.items) >= s.maxEntries {
 			return Session{}, authx.ErrStoreFull
 		}
-		sess := Session{ID: id, Values: make(map[string]string)}
-		s.saveLocked(sess, ttl)
-		return sess, nil
+		sess := Session{
+			ID:                id,
+			Values:            make(map[string]string),
+			IdleExpiresAt:     nextExpiry(now, lifetime.IdleTTL),
+			AbsoluteExpiresAt: nextExpiry(now, lifetime.AbsoluteTTL),
+		}
+		s.items[id] = sessionItem{session: cloneSession(sess)}
+		return cloneSession(sess), nil
 	}
 	return Session{}, errx.WrapCode(authx.ErrSessionStoreInvalid,
 		authx.CodeSessionStoreInvalid, "会话 ID 冲突且重试耗尽")
@@ -118,7 +147,7 @@ func (s *MemoryStore) Get(_ context.Context, id string) (Session, error) {
 	if !ok {
 		return Session{}, authx.ErrSessionNotFound
 	}
-	if !s.now().Before(item.expires) {
+	if expired(item.session, s.now()) {
 		delete(s.items, id)
 		return Session{}, authx.ErrSessionNotFound
 	}
@@ -126,28 +155,36 @@ func (s *MemoryStore) Get(_ context.Context, id string) (Session, error) {
 }
 
 // Save 保存会话（内部存储副本，避免外部修改）。
-func (s *MemoryStore) Save(_ context.Context, sess Session, ttl time.Duration) error {
+func (s *MemoryStore) Save(ctx context.Context, sess Session, ttl time.Duration) error {
+	return s.SaveWithLifetime(ctx, sess, Lifetime{IdleTTL: ttl})
+}
+
+// SaveWithLifetime 保存会话并刷新空闲期限；已有绝对期限保持不变。
+func (s *MemoryStore) SaveWithLifetime(_ context.Context, sess Session, lifetime Lifetime) error {
 	if err := validSessionArg(sess.ID, "required"); err != nil {
 		return err
 	}
-	if err := validSessionArg(ttl, "gt=0"); err != nil {
+	if err := validateLifetime(lifetime); err != nil {
 		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := s.now()
+	if item, ok := s.items[sess.ID]; ok && !item.session.AbsoluteExpiresAt.IsZero() {
+		if sess.AbsoluteExpiresAt.IsZero() ||
+			item.session.AbsoluteExpiresAt.Before(sess.AbsoluteExpiresAt) {
+			sess.AbsoluteExpiresAt = item.session.AbsoluteExpiresAt
+		}
+	}
+	if sess.AbsoluteExpiresAt.IsZero() && lifetime.AbsoluteTTL > 0 {
+		sess.AbsoluteExpiresAt = nextExpiry(now, lifetime.AbsoluteTTL)
+	}
 	if _, ok := s.items[sess.ID]; !ok && len(s.items) >= s.maxEntries {
 		return authx.ErrStoreFull
 	}
-	s.saveLocked(sess, ttl)
+	sess.IdleExpiresAt = nextExpiry(now, lifetime.IdleTTL)
+	s.items[sess.ID] = sessionItem{session: cloneSession(sess)}
 	return nil
-}
-
-// saveLocked 写入会话（调用方持锁）。
-func (s *MemoryStore) saveLocked(sess Session, ttl time.Duration) {
-	s.items[sess.ID] = sessionItem{
-		session: cloneSession(sess),
-		expires: s.now().Add(ttl),
-	}
 }
 
 // Delete 删除会话。
@@ -163,10 +200,19 @@ func (s *MemoryStore) Delete(_ context.Context, id string) error {
 
 // Rotate 轮换会话 ID：读取旧会话、生成新 ID、复制全部值并删除旧条目。
 func (s *MemoryStore) Rotate(ctx context.Context, id string, ttl time.Duration) (Session, error) {
+	return s.RotateWithLifetime(ctx, id, Lifetime{IdleTTL: ttl})
+}
+
+// RotateWithLifetime 轮换会话 ID：保留绝对期限，刷新空闲期限并复制全部值。
+func (s *MemoryStore) RotateWithLifetime(
+	ctx context.Context,
+	id string,
+	lifetime Lifetime,
+) (Session, error) {
 	if err := validSessionArg(id, "required"); err != nil {
 		return Session{}, err
 	}
-	if err := validSessionArg(ttl, "gt=0"); err != nil {
+	if err := validateLifetime(lifetime); err != nil {
 		return Session{}, err
 	}
 	s.mu.Lock()
@@ -175,7 +221,8 @@ func (s *MemoryStore) Rotate(ctx context.Context, id string, ttl time.Duration) 
 	if !ok {
 		return Session{}, authx.ErrSessionNotFound
 	}
-	if !s.now().Before(item.expires) {
+	now := s.now()
+	if expired(item.session, now) {
 		delete(s.items, id)
 		return Session{}, authx.ErrSessionNotFound
 	}
@@ -187,13 +234,21 @@ func (s *MemoryStore) Rotate(ctx context.Context, id string, ttl time.Duration) 
 		if _, exists := s.items[nid]; exists {
 			continue // ID 冲突，重试。
 		}
-		rotated := Session{ID: nid, Values: make(map[string]string, len(item.session.Values))}
+		rotated := Session{
+			ID:                nid,
+			Values:            make(map[string]string, len(item.session.Values)),
+			IdleExpiresAt:     nextExpiry(now, lifetime.IdleTTL),
+			AbsoluteExpiresAt: item.session.AbsoluteExpiresAt,
+		}
 		for k, v := range item.session.Values {
 			rotated.Values[k] = v
 		}
-		s.items[nid] = sessionItem{session: rotated, expires: s.now().Add(ttl)}
+		if rotated.AbsoluteExpiresAt.IsZero() && lifetime.AbsoluteTTL > 0 {
+			rotated.AbsoluteExpiresAt = nextExpiry(now, lifetime.AbsoluteTTL)
+		}
+		s.items[nid] = sessionItem{session: cloneSession(rotated)}
 		delete(s.items, id)
-		return rotated, nil
+		return cloneSession(rotated), nil
 	}
 	return Session{}, errx.WrapCode(authx.ErrSessionStoreInvalid,
 		authx.CodeSessionStoreInvalid, "会话 ID 冲突且重试耗尽")
@@ -206,7 +261,7 @@ func (s *MemoryStore) Cleanup() int {
 	now := s.now()
 	removed := 0
 	for id, item := range s.items {
-		if !now.Before(item.expires) {
+		if expired(item.session, now) {
 			delete(s.items, id)
 			removed++
 		}
@@ -224,9 +279,33 @@ func newSessionID() (string, error) {
 	return randRead(idBytes)
 }
 
+func validateLifetime(lifetime Lifetime) error {
+	if lifetime.IdleTTL <= 0 || lifetime.AbsoluteTTL < 0 {
+		return authx.ErrSessionInvalid
+	}
+	return nil
+}
+
+func nextExpiry(now time.Time, ttl time.Duration) time.Time {
+	if ttl <= 0 {
+		return time.Time{}
+	}
+	return now.Add(ttl)
+}
+
+func expired(sess Session, now time.Time) bool {
+	return (!sess.IdleExpiresAt.IsZero() && !now.Before(sess.IdleExpiresAt)) ||
+		(!sess.AbsoluteExpiresAt.IsZero() && !now.Before(sess.AbsoluteExpiresAt))
+}
+
 // cloneSession 深拷贝会话。
 func cloneSession(s Session) Session {
-	out := Session{ID: s.ID, Values: make(map[string]string, len(s.Values))}
+	out := Session{
+		ID:                s.ID,
+		Values:            make(map[string]string, len(s.Values)),
+		IdleExpiresAt:     s.IdleExpiresAt,
+		AbsoluteExpiresAt: s.AbsoluteExpiresAt,
+	}
 	for k, v := range s.Values {
 		out.Values[k] = v
 	}

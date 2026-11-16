@@ -244,3 +244,110 @@ func TestRotateConflict(t *testing.T) {
 		t.Fatalf("冲突耗尽应报错，实际：%v", err)
 	}
 }
+
+// TestLifetimeSemantics 覆盖空闲续期、绝对过期和边界时间。
+func TestLifetimeSemantics(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(func() time.Time { return now })
+	lifetime := Lifetime{IdleTTL: 30 * time.Minute, AbsoluteTTL: time.Hour}
+
+	sess, err := store.CreateWithLifetime(ctx, lifetime)
+	testx.RequireNoError(t, err)
+	testx.RequireEqual(t, sess.IdleExpiresAt, now.Add(30*time.Minute))
+	testx.RequireEqual(t, sess.AbsoluteExpiresAt, now.Add(time.Hour))
+
+	now = now.Add(20 * time.Minute)
+	sess.Values["k"] = "v"
+	testx.RequireNoError(t, store.SaveWithLifetime(ctx, sess, lifetime))
+	got, err := store.Get(ctx, sess.ID)
+	testx.RequireNoError(t, err)
+	testx.RequireEqual(t, got.IdleExpiresAt, now.Add(30*time.Minute))
+	testx.RequireEqual(t, got.AbsoluteExpiresAt, time.Date(2026, 11, 16, 11, 0, 0, 0, time.UTC))
+
+	now = now.Add(41 * time.Minute)
+	if _, err := store.Get(ctx, sess.ID); err == nil ||
+		!errx.Is(err, authx.CodeSessionNotFound) {
+		t.Fatalf("持续活动也不能突破绝对期限，实际：%v", err)
+	}
+
+	idleOnly, err := store.CreateWithLifetime(ctx, Lifetime{IdleTTL: time.Minute})
+	testx.RequireNoError(t, err)
+	now = now.Add(time.Minute)
+	if _, err := store.Get(ctx, idleOnly.ID); err == nil ||
+		!errx.Is(err, authx.CodeSessionNotFound) {
+		t.Fatalf("空闲期限边界应按时失效，实际：%v", err)
+	}
+}
+
+// TestLifetimePersistence 覆盖保存时绝对期限不可被调用方延长。
+func TestLifetimePersistence(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(func() time.Time { return now })
+	lifetime := Lifetime{IdleTTL: 30 * time.Minute, AbsoluteTTL: time.Hour}
+	sess, err := store.CreateWithLifetime(ctx, lifetime)
+	testx.RequireNoError(t, err)
+
+	sess.AbsoluteExpiresAt = time.Time{}
+	sess.IdleExpiresAt = time.Time{}
+	testx.RequireNoError(t, store.SaveWithLifetime(ctx, sess, lifetime))
+	got, err := store.Get(ctx, sess.ID)
+	testx.RequireNoError(t, err)
+	testx.RequireEqual(t, got.AbsoluteExpiresAt, time.Date(2026, 11, 16, 11, 0, 0, 0, time.UTC))
+
+	sess.AbsoluteExpiresAt = now.Add(5 * time.Hour)
+	testx.RequireNoError(t, store.SaveWithLifetime(ctx, sess, lifetime))
+	got, err = store.Get(ctx, sess.ID)
+	testx.RequireNoError(t, err)
+	testx.RequireEqual(t, got.AbsoluteExpiresAt, time.Date(2026, 11, 16, 11, 0, 0, 0, time.UTC))
+
+	now = now.Add(20 * time.Minute)
+	rotated, err := store.RotateWithLifetime(ctx, sess.ID, lifetime)
+	testx.RequireNoError(t, err)
+	testx.RequireEqual(t, rotated.AbsoluteExpiresAt, got.AbsoluteExpiresAt)
+	testx.RequireEqual(t, rotated.IdleExpiresAt, now.Add(30*time.Minute))
+
+	legacy, err := store.Create(ctx, 10*time.Minute)
+	testx.RequireNoError(t, err)
+	migrated, err := store.RotateWithLifetime(ctx, legacy.ID, lifetime)
+	testx.RequireNoError(t, err)
+	testx.RequireEqual(t, migrated.AbsoluteExpiresAt, now.Add(time.Hour))
+}
+
+// TestLifetimeValidation 覆盖期限参数与新旧接口委托。
+func TestLifetimeValidation(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(func() time.Time { return now })
+	for _, lifetime := range []Lifetime{
+		{},
+		{AbsoluteTTL: -time.Second},
+	} {
+		if _, err := store.CreateWithLifetime(ctx, lifetime); err == nil ||
+			!errx.Is(err, authx.CodeSessionInvalid) {
+			t.Fatalf("非法期限应报错：%+v，实际：%v", lifetime, err)
+		}
+	}
+	if err := store.SaveWithLifetime(ctx, Session{ID: "x"}, Lifetime{}); err == nil ||
+		!errx.Is(err, authx.CodeSessionInvalid) {
+		t.Fatalf("保存非法期限应报错，实际：%v", err)
+	}
+	if _, err := store.RotateWithLifetime(ctx, "x", Lifetime{AbsoluteTTL: -1}); err == nil ||
+		!errx.Is(err, authx.CodeSessionInvalid) {
+		t.Fatalf("轮换非法期限应报错，实际：%v", err)
+	}
+
+	sess, err := store.Create(ctx, time.Hour)
+	testx.RequireNoError(t, err)
+	got, err := store.Get(ctx, sess.ID)
+	testx.RequireNoError(t, err)
+	testx.RequireTrue(t, got.AbsoluteExpiresAt.IsZero())
+
+	custom := Session{ID: "custom"}
+	testx.RequireNoError(t, store.SaveWithLifetime(ctx, custom,
+		Lifetime{IdleTTL: time.Hour, AbsoluteTTL: time.Hour}))
+	got, err = store.Get(ctx, custom.ID)
+	testx.RequireNoError(t, err)
+	testx.RequireEqual(t, got.AbsoluteExpiresAt, now.Add(time.Hour))
+}
